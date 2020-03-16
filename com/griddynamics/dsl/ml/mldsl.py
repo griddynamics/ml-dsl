@@ -224,10 +224,12 @@ class ExecMagic(Magics):
         args_dct = ExecMagic.convert(args[1])
 
         builder = DataprocJobBuilder()
-        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket, job_region=prf.region,
-                                                                          cluster=prf.cluster,
-                                                                          job_project_id=prf.project,
-                                                                          ml_region=prf.ai_region)
+        session = (SessionFactory(platform=args[0].platform)
+                   .build_session(job_bucket=prf.bucket, job_region=prf.region,
+                                  cluster=prf.cluster,
+                                  job_project_id=prf.project,
+                                  ml_region=prf.ai_region,
+                                  use_cloud_engine_credentials=prf.use_cloud_engine_credentials))
         job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
         output_path = '{}/{}'.format(args[0].output_path, job_name)
         args_dct['--output_path'] = output_path
@@ -260,7 +262,7 @@ class ExecMagic(Magics):
 
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
-            "job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
+            "#job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
         ]
         get_ipython().set_next_input('\n'.join(job_reference))
 
@@ -350,7 +352,7 @@ class ExecMagic(Magics):
             display(Image(filename=metrics_png))
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
-            "job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
+            "#job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
         ]
         get_ipython().set_next_input('\n'.join(job_reference))
 
@@ -370,9 +372,13 @@ class ExecMagic(Magics):
         parser.add_argument('--custom_code', '-c', help='Additional code for your model', type=str, default=None,
                             nargs='+', action=JoinAction)
         parser.add_argument('--path_to_saved_model', '-m', help='Path to trained model', default='')
+        parser.add_argument('--use_cloud_engine_credentials',
+                            help='Use cloud engine credentials',
+                            type=bool, default=False)
 
         args = parser.parse_known_args(py_path.split())
         prf_name = args[0].profile
+        use_cloud_engine_credentials = args[0].use_cloud_engine_credentials
         prf = AIProfile.get(prf_name)
         if prf is None:
             raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
@@ -380,7 +386,8 @@ class ExecMagic(Magics):
         path_of_model = f'gs://{prf.bucket}/{args[0].model}'
 
         if args[0].path_to_saved_model != '':
-            GCPHelper.copy_folder_on_storage(prf.bucket, args[0].path_to_saved_model, path_of_model)
+            GCPHelper.copy_folder_on_storage(prf.bucket, args[0].path_to_saved_model, path_of_model,
+                                             use_cloud_engine_credentials=use_cloud_engine_credentials)
             print("Saved model to {}".format(path_of_model))
         args_dct = ExecMagic.convert(args[1])
         for key in args_dct.keys():
@@ -436,14 +443,13 @@ class ExecMagic(Magics):
         display(JSON(response))
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
-            "job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
+            "#job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
         ]
         get_ipython().set_next_input('\n'.join(job_reference))
 
     @line_cell_magic
     def py_instance(self, line):
         _variables["instance"] = line
-
 
     @line_magic
     def py_test(self, py_path):
@@ -521,6 +527,7 @@ class ExecMagic(Magics):
         for entry in logging_client.list_entries(projects=args[0].project_id, filter_=FILTER, order_by=order_by,
                                                  page_size=args[0].page_size):
             print('\t'.join([entry.timestamp.strftime("%m/%d/%Y, %H:%M:%S"), entry.payload["message"]]))
+
 
 try:
     get_ipython().register_magics(ExecMagic)

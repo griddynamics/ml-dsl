@@ -96,7 +96,8 @@ class AIProfile(Profile):
 class PySparkJobProfile(Profile):
     _profiles = {}
 
-    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async):
+    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async,
+                 use_cloud_engine_credentials=False):
         super(PySparkJobProfile, self).__init__(root_path, bucket, project, cluster, region, ai_region, job_prefix,
                                                 job_async)
         # List of files associated with the job
@@ -112,6 +113,7 @@ class PySparkJobProfile(Profile):
         self.archives = []
         self.logging = None
         self.max_failures = 0
+        self.use_cloud_engine_credentials = use_cloud_engine_credentials
 
     @staticmethod
     def get(name):
