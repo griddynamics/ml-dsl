@@ -97,7 +97,7 @@ class AIProfile(Profile):
 class PySparkJobProfile(Profile):
     _profiles = {}
 
-    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async, logging):
+    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async):
         super(PySparkJobProfile, self).__init__(root_path, bucket, project, cluster, region, ai_region, job_prefix,
                                                 job_async)
         # List of files associated with the job
@@ -117,7 +117,7 @@ class PySparkJobProfile(Profile):
             # The per-package log levels for the driver.
             # This may include "root" package name to configure rootLogger.
             # Examples:  'com.google = 4', 'root = 4', 'org.apache = 1'
-            "driver_log_levels": logging,
+            "driver_log_levels": {},
         }
         self.max_failures = 0
 

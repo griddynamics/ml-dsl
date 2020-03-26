@@ -12,6 +12,7 @@
 import argparse
 import sys
 import re
+from runpy import run_path
 
 from IPython import get_ipython
 # noinspection PyUnresolvedReferences
@@ -115,7 +116,7 @@ class ExecMagic(Magics):
                     print('Local SparkContext has been stopped automatically')
 
         os.makedirs(str(mldsl_path), exist_ok=True)
-
+        print("Temporary path: {}".format(str(mldsl_path / p_args.name)))
         with open(str(mldsl_path / p_args.name), 'w') as f:
             f.writelines(cell)
 
@@ -447,7 +448,6 @@ class ExecMagic(Magics):
     def py_instance(self, line):
         _variables["instance"] = line
 
-
     @line_magic
     def py_test(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
@@ -535,10 +535,10 @@ class ExecMagic(Magics):
                             action=JoinAction)
         parser.add_argument('--old_job_id', type=str, help='ID of old version job', default=None, nargs='+',
                             action=JoinAction)
-        parser.add_argument('--wait_delay', type=float, help='Time between attempts of job log checking', default=1)
-        parser.add_argument('--wait_tries', type=int, help='Attempts quantity of job log checking', default=5)
-        parser.add_argument('--validation_pattern', type=str, nargs='+', action=JoinAction,
-                            help='Str pattern to look for in job logs', default='')
+        parser.add_argument('--validator', '-v', help='name of class Validator', type=str, nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--validator_path', '-vp', help='path of file with class Validator', type=str, nargs='+',
+                            action=JoinAction)
         parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
         parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
                             action=JoinAction)
@@ -559,11 +559,11 @@ class ExecMagic(Magics):
             project=prf.project,
             region=prf.region)))
 
+        validator_module = run_path(args[0].validator_path)
+
         executor = JobUpgradeExecutor(job, session, args[0].old_job_id)
-        res = executor.submit_upgrade_job(args[0].validation_pattern,
-                                          run_async=prf.job_async,
-                                          wait_delay=args[0].wait_delay,
-                                          wait_tries=args[0].wait_tries)
+        res = executor.submit_upgrade_job(validator=args[0].validator, validator_path=validator_module,
+                                          run_async=prf.job_async)
         job_tracker[job_name] = res
         # noinspection PyTypeChecker
         display(JSON(ExecMagic.py_data_dict(res)))
@@ -579,4 +579,3 @@ try:
     get_ipython().register_magics(ExecMagic)
 except:
     print('Cannot load cell magic')
-

@@ -23,7 +23,6 @@ from functools import reduce
 
 from com.griddynamics.dsl.ml.jobs.pyspark_job import PySparkJob
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJob
-from com.griddynamics.dsl.ml.jobs.validator_job import JobValidator
 from com.griddynamics.dsl.ml.sessions import Session, CompositeSession
 from com.griddynamics.dsl.ml.py_script import PyScript, ScriptState
 from com.griddynamics.dsl.ml.helpers import *
@@ -586,11 +585,11 @@ class JobUpgradeExecutor(DataprocExecutor):
             self.__old_job_id)
         return job
 
-    def submit_upgrade_job(self, validation_pattern, run_async=True, wait_delay=5, wait_tries=5):
+    def submit_upgrade_job(self, validator, validator_path, run_async=True):
         job = self.submit_job(run_async=run_async)
-        validator = JobValidator(job, self._DataprocExecutor__session,
-                                 wait_delay=wait_delay, wait_tries=wait_tries)
-        if validator.wait_for_new_job_is_approved(validation_pattern):
+        validator_class = validator_path[validator](job, self._DataprocExecutor__session)
+        if validator_class.validate():
+            print('Validation of new version job is successful')
             self.cancel_old_job()
             return job
         else:
