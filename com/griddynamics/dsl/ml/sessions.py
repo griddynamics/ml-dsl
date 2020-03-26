@@ -13,6 +13,7 @@
 from abc import ABC, abstractmethod
 # noinspection PyUnresolvedReferences
 from google.cloud import dataproc_v1
+from google.auth import compute_engine
 # noinspection PyUnresolvedReferences
 from google.cloud.dataproc_v1.gapic.transports import job_controller_grpc_transport
 from googleapiclient import discovery
@@ -37,8 +38,13 @@ class CompositeSession:
         return self.__ml_session
 
     def __build(self, job_bucket, job_region, cluster, job_project_id, job_path='jobs-root', ml_region=None,
-                ml_project_id=None, ml_bucket=None):
-        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, job_path)
+                ml_project_id=None, ml_bucket=None, use_cloud_engine_credentials=False):
+        self.__job_session = Session(job_bucket,
+                                     job_region,
+                                     cluster,
+                                     job_project_id,
+                                     job_path,
+                                     use_cloud_engine_credentials=use_cloud_engine_credentials)
         if ml_project_id is None:
             ml_project_id = job_project_id
         if ml_region is None:
@@ -46,20 +52,25 @@ class CompositeSession:
         if ml_bucket is None:
             ml_bucket = job_bucket
 
-        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, job_path)
-        self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, None)
+        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, job_path,
+                                     use_cloud_engine_credentials=use_cloud_engine_credentials)
+        # noinspection PyTypeChecker
+        self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, None,
+                                    use_cloud_engine_credentials=use_cloud_engine_credentials)
 
     def __init__(self, job_bucket, job_region, cluster, job_project_id, job_path, ml_region,
-                 ml_project_id, ml_bucket):
+                 ml_project_id, ml_bucket, use_cloud_engine_credentials=False):
+        self.use_cloud_engine_credentials = use_cloud_engine_credentials
         if self.__ml_session is None and self.__job_session is None:
             self.__build(job_bucket, job_region, cluster, job_project_id, job_path, ml_region,
-                         ml_project_id, ml_bucket)
+                         ml_project_id, ml_bucket,
+                         use_cloud_engine_credentials=use_cloud_engine_credentials)
 
 
 class Session:
     """Session of current run"""
 
-    def __init__(self, bucket, zone, cluster, project_id, job_path='jobs-root'):
+    def __init__(self, bucket, zone, cluster, project_id, job_path='jobs-root', use_cloud_engine_credentials=False):
         self.__bucket = bucket
         self.__jobs_path = job_path
         self.__zone = zone
@@ -73,15 +84,21 @@ class Session:
         else:
             self.__region = self.get_region_from_zone(self.__zone)
 
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
         if cluster is None and job_path is None:
-            self._cloudml = discovery.build('ml', 'v1')
+            self._cloudml = discovery.build('ml', 'v1', credentials=credentials)
         else:
+            # print('use_cloud_engine_credentials =  {}, credentials = {}'.format(use_cloud_engine_credentials,
+            #                                                                     credentials))
             if self.zone == 'global':
-                self._dataproc_job_client = dataproc_v1.JobControllerClient()
+                self._dataproc_job_client = dataproc_v1.JobControllerClient(credentials=credentials)
             else:
                 job_transport = (
                     job_controller_grpc_transport.JobControllerGrpcTransport(
-                        address='{}-dataproc.googleapis.com:443'.format(self.__region)))
+                        address='{}-dataproc.googleapis.com:443'.format(self.__region),
+                        credentials=credentials))
                 self._dataproc_job_client = dataproc_v1.JobControllerClient(job_transport)
 
     @staticmethod
@@ -160,11 +177,12 @@ class GCPSessionFactory(AbstractSessionFactory):
 
     @staticmethod
     def build_session(job_bucket, job_region, cluster, job_project_id, ml_region=None, project_local_root='jobs-root',
-                      project_env_root='', ml_project_id=None, ml_bucket=None):
+                      project_env_root='', ml_project_id=None, ml_bucket=None, use_cloud_engine_credentials=False):
         if GCPSessionFactory.__composite_session is None:
             GCPSessionFactory.__composite_session = CompositeSession(job_bucket, job_region, cluster, job_project_id,
                                                                      project_local_root,
                                                                      ml_region,
-                                                                     ml_project_id, ml_bucket)
+                                                                     ml_project_id, ml_bucket,
+                                                                     use_cloud_engine_credentials)
 
         return GCPSessionFactory.__composite_session
