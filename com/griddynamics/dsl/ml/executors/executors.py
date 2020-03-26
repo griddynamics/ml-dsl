@@ -63,6 +63,7 @@ class AIPlatformJobExecutor:
 
         if self.ai_job.train_input:
             self.ai_job.train_input['region'] = self.session.zone
+        self.use_cloud_engine_credentials = session.use_cloud_engine_credentials
 
     def package(self):
         try:
@@ -84,7 +85,8 @@ class AIPlatformJobExecutor:
                     artifact = os.path.basename(file_name)
                     artifact_src = '{}/{}'.format(dist_dir, artifact)
                     GCPHelper.upload_file_to_storage(self.session.project_id, self.session.bucket,
-                                                     artifact_src, self.ai_job.package_dst)
+                                                     artifact_src, self.ai_job.package_dst,
+                                                     use_cloud_engine_credentials=self.use_cloud_engine_credentials)
                     staging_dir = 'gs://{}/{}/{}'.format(self.session.bucket, self.ai_job.package_dst, artifact)
                     print(f"Uploading custom package {artifact_src} to dir {staging_dir}")
                     package_uris.append(staging_dir)
@@ -102,9 +104,11 @@ class AIPlatformJobExecutor:
 
         for p in self.ai_job.model.packages:
             if str(Path(model_files_path) / p.file_name).startswith("gs://"):
-                GCPHelper.copy_file_on_storage(self.session.bucket, p.file_name, p.build())
+                GCPHelper.copy_file_on_storage(self.session.bucket, p.file_name, p.build(),
+                                               use_cloud_engine_credentials=self.use_cloud_engine_credentials)
             else:
-                GCPHelper.upload_file_to_storage(self.session.project_id, self.session.bucket, p.file_name, p.build())
+                GCPHelper.upload_file_to_storage(self.session.project_id, self.session.bucket, p.file_name, p.build(),
+                                                 use_cloud_engine_credentials=self.use_cloud_engine_credentials)
 
         job_spec = {'jobId': self.ai_job.name, 'trainingInput': train_input}
 
@@ -193,7 +197,8 @@ class AIPlatformJobExecutor:
 
             staging_uri = f"{version_body['deploymentUri']}/staging"
             GCPHelper.upload_file_to_storage(self.session.project_id, self.session.bucket, pkg_path,
-                                             staging_uri)
+                                             staging_uri,
+                                             use_cloud_engine_credentials=self.use_cloud_engine_credentials)
             print(f"Uploading file {pkg_name} to dir: {staging_uri}")
 
             version_body['packageUris'] = [f"{staging_uri}/{pkg_name}"]
@@ -212,7 +217,8 @@ class AIPlatformJobExecutor:
             if train_job_id is None:
                 raise ValueError("train_job_id must be specified for tuning job")
             best_trial = self.get_best_hp_tuning_result(self.session, train_job_id, objective_value_is_maximum_needed)
-            path = self.set_and_get_best_model_path(best_trial, self.session.bucket, f"{version_body['deploymentUri']}")
+            path = self.set_and_get_best_model_path(best_trial, self.session.bucket, f"{version_body['deploymentUri']}",
+                                                    use_cloud_engine_credentials=self.use_cloud_engine_credentials)
 
             print(path)
             version_body['deploymentUri'] = path
@@ -222,14 +228,17 @@ class AIPlatformJobExecutor:
             if a.file_name.startswith("gs://"):
                 new_blob_name = os.path.join(version_body['deploymentUri'], Path(a.file_name).name)
                 if Path(a.file_name).is_dir():
-                    GCPHelper.copy_folder_on_storage(self.session.bucket, a.file_name, new_blob_name)
+                    GCPHelper.copy_folder_on_storage(self.session.bucket, a.file_name, new_blob_name,
+                                                     use_cloud_engine_credentials=self.use_cloud_engine_credentials)
                 else:
                     print(f"Copying file {a.file_name} to: {new_blob_name}")
-                    GCPHelper.copy_file_on_storage(self.session.bucket, a.file_name, new_blob_name)
+                    GCPHelper.copy_file_on_storage(self.session.bucket, a.file_name, new_blob_name,
+                                                   use_cloud_engine_credentials=self.use_cloud_engine_credentials)
             else:
                 print(f"Uploading file {a.file_name} to: {version_body['deploymentUri']}")
                 GCPHelper.upload_file_to_storage(self.session.project_id, self.session.bucket, a.file_name,
-                                                 version_body['deploymentUri'])
+                                                 version_body['deploymentUri'],
+                                                 use_cloud_engine_credentials=self.use_cloud_engine_credentials)
 
         version_body['name'] = version_name
 
@@ -306,11 +315,13 @@ class AIPlatformJobExecutor:
         return best_trial['trialId']
 
     @staticmethod
-    def set_and_get_best_model_path(best_trial, bucket, train_job_dir):
-        GCPHelper.delete_path_from_storage(bucket, f"{train_job_dir}/model")
+    def set_and_get_best_model_path(best_trial, bucket, train_job_dir, use_cloud_engine_credentials):
+        GCPHelper.delete_path_from_storage(bucket, f"{train_job_dir}/model",
+                                           use_cloud_engine_credentials=use_cloud_engine_credentials)
         best_model_dir = f"{train_job_dir}/model_trial_{best_trial}"
         print(f"Best trial path:{best_model_dir}")
-        GCPHelper.copy_folder_on_storage(bucket, best_model_dir, f"{train_job_dir}/model")
+        GCPHelper.copy_folder_on_storage(bucket, best_model_dir, f"{train_job_dir}/model",
+                                         use_cloud_engine_credentials=use_cloud_engine_credentials)
 
         return best_model_dir
 
@@ -342,6 +353,7 @@ class DataprocExecutor(Executor):
         self.__cluster_uuid = None
         self.__job_description = None
         self.__scheduling = {'max_failures_per_hour': job.max_failures}
+        self.use_cloud_engine_credentials = session.use_cloud_engine_credentials
 
     def submit_job(self, run_async=True):
 
@@ -482,7 +494,11 @@ class DataprocExecutor(Executor):
         """Downloads the output file from Cloud Storage and returns it as a
         string."""
         print('Downloading output file.')
-        client = storage.Client(project=self.__session.project_id)
+        credentials = None
+        if self.use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+
+        client = storage.Client(project=self.__session.project_id, credentials=credentials)
         bucket = client.get_bucket(self.__session.bucket)
         output_blob = (
             ('google-cloud-dataproc-metainfo/{}/jobs/{}/driveroutput.000000000'.
@@ -497,12 +513,17 @@ class DataprocExecutor(Executor):
                 f"Uploading file to dir: {self.__session.jobs_path}/{self.__job.job_id}/"
                 f"{Helper.get_file_name(file_path.name)}")
             GCPHelper.upload_file_to_storage(self.__session.project_id, self.__session.bucket, str(file_path),
-                                             f'{self.__session.jobs_path}/{self.__job.job_id}')
+                                             f'{self.__session.jobs_path}/{self.__job.job_id}',
+                                             use_cloud_engine_credentials=self.use_cloud_engine_credentials)
 
     def upload_script_to_gs_job_path(self, py_script: PyScript):
         """Uploads the PySpark script in this directory to the configured input
         bucket."""
-        client = storage.Client(project=self.__session.project_id)
+
+        credentials = None
+        if self.use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+        client = storage.Client(project=self.__session.project_id, credentials=credentials)
         bucket = client.get_bucket(self.__session.bucket)
         blob = bucket.blob('{}/{}/{}'.format(self.__session.jobs_path, self.__job.job_id, py_script.name))
         blob.upload_from_string(py_script.script)
