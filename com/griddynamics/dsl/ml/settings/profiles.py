@@ -9,6 +9,7 @@
 # Project:     ML Platform
 # Description: DSL to configure and execute ML/DS pipelines
 
+
 class Profile(object):
     _profiles = {}
 
@@ -110,7 +111,14 @@ class PySparkJobProfile(Profile):
         # Example {"table": "my_table", "duration": "100"}
         self.args = {}
         self.archives = []
-        self.logging = None
+        # The runtime logging config of the job.
+        # Optional. The runtime log config for job execution.
+        self.logging = {
+            # The per-package log levels for the driver.
+            # This may include "root" package name to configure rootLogger.
+            # Examples:  'com.google = 4', 'root = 4', 'org.apache = 1'
+            "driver_log_levels": {},
+        }
         self.max_failures = 0
 
     @staticmethod

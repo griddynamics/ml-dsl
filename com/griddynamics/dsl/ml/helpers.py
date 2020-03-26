@@ -18,6 +18,9 @@ from unittest import mock
 import setuptools
 from google.cloud import storage
 
+import boto3
+from botocore.exceptions import ClientError
+
 
 class Helper:
 
@@ -113,3 +116,62 @@ class GCPHelper(Helper):
     @staticmethod
     def construct_path(filename: str, base_path):
         return filename if filename.startswith('gs://') else Path(base_path) / filename
+
+
+class AWSHelper(Helper):
+
+    @staticmethod
+    def delete_path_from_storage(bucket_name, path):
+        s3 = boto3.client('s3')
+        # Delete the object
+        try:
+            s3.delete_object(Bucket=bucket_name, Key=path)
+        except ClientError as e:
+            raise e
+
+    @staticmethod
+    def copy_folder_on_storage(bucket_name, path_from: str, path_to: str):
+        s3 = boto3.client("s3")
+        objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=path_from)['Contents']
+        for obj in objects:
+            dest = obj['Key'].replace(path_from, path_to)
+            copy_source = {'Bucket': bucket_name, 'Key': obj['Key']}
+            s3.copy_object(CopySource=copy_source, Bucket=bucket_name, Key=dest)
+
+    @staticmethod
+    def download_folder_from_storage(bucket_name, path_from, path_to):
+        s3 = boto3.client("s3")
+        objects = s3.list_objects_v2(Bucket=bucket_name, Prefix=path_from)['Contents']
+        for obj in objects:
+            dest = obj['Key'].replace(path_from, path_to)
+            if not os.path.exists(os.path.dirname(dest)):
+                os.makedirs(os.path.dirname(dest))
+            try:
+                s3.download_file(bucket_name, obj['Key'], dest)
+            except IsADirectoryError:
+                pass
+
+    @staticmethod
+    def upload_file_to_storage(bucket, file_name, object_name):
+        if object_name is None:
+            object_name = file_name
+        # Upload the file
+        s3_client = boto3.client('s3')
+        try:
+            response = s3_client.upload_file(file_name, bucket, object_name)
+        except ClientError as e:
+            raise e
+
+    @staticmethod
+    def copy_object(src_bucket_name, src_object_name, dest_bucket_name=None, dest_object_name=None):
+        copy_source = {'Bucket': src_bucket_name, 'Key': src_object_name}
+        if dest_object_name is None:
+            dest_object_name = src_object_name
+        if dest_bucket_name is None:
+            dest_bucket_name = src_bucket_name
+        # Copy the object
+        s3 = boto3.client('s3')
+        try:
+            s3.copy_object(CopySource=copy_source, Bucket=dest_bucket_name, Key=dest_object_name)
+        except ClientError as e:
+            raise e

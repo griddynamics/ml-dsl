@@ -276,8 +276,7 @@ class AIPlatformJobExecutor:
         return request.execute()
 
     @staticmethod
-    def get_best_hp_tuning_result(session: CompositeSession, job_name, objective_value_is_maximum_needed=False,
-                                  debug=False):
+    def get_best_hp_tuning_result(session: CompositeSession, job_name, objective_value_is_maximum_needed=False,                                  debug=False):
         print('MAX is needed: {}'.format(objective_value_is_maximum_needed))
 
         try:
@@ -356,6 +355,9 @@ class DataprocExecutor(Executor):
         self.__cluster_uuid = job.placement.cluster_uuid
 
         if run_async:
+            while (len(self.__yarn_app) == 0) or (self.job_status != 'RUNNING'):
+                job = self.get_job()
+                sleep(1)
             return job
         else:
             return self.__wait_for_job()
@@ -417,23 +419,22 @@ class DataprocExecutor(Executor):
 
     def cancel_job(self):
         print("Canceling job: {}".format(self.__job.job_id))
-        return self.__session._dataproc_job_client.cancel_job(self.__session.project_id, self.__session.region,
+        self.__session._dataproc_job_client.cancel_job(self.__session.project_id, self.__session.region,
                                                               self.__job.job_id)
+        while True:
+            self.job_status = self.get_job_state()
+            if self.job_status != 'CANCELLED':
+                sleep(1)
+            else:
+                print('Job {} was successfully cancelled.'.format(self.__job.job_id))
+                break
 
     def __wait_for_job(self):
         try:
             while True:
-
-                job = self.__session._dataproc_job_client.get_job(self.__session.project_id, self.__session.region,
-                                                                  self.__job.job_id)
-                self.job_status = job.status.State.Name(job.status.state)
-
+                job = self.get_job()
                 self._print_job_status(job.status_history)
-
                 self._print_yarn_status(job.yarn_applications)
-
-                self.__status_history = job.status_history
-                self.__yarn_app = job.yarn_applications
 
                 if self.job_status == 'ERROR':
                     print('Job is failed. \n Details: {}'.format(job.status.details))
@@ -550,5 +551,52 @@ class DataprocExecutor(Executor):
 
     def download_output(self):
         return self.download_output_from_gs()
+
+
+class JobUpgradeExecutor(DataprocExecutor):
+    def __init__(self, job: PySparkJob, session: CompositeSession, old_job_id: str):
+        super(JobUpgradeExecutor, self).__init__(job, session)
+        self.__old_job_id = old_job_id
+
+    def get_old_job_state(self):
+        job = self._DataprocExecutor__session._dataproc_job_client.get_job(self._DataprocExecutor__session.project_id,
+                                                                           self._DataprocExecutor__session.region,
+                                                                           self.__old_job_id)
+        old_job_status = job.status.State.Name(job.status.state)
+        return old_job_status
+
+    def cancel_old_job(self):
+        print("Canceling job: {}".format(self.__old_job_id))
+        self._DataprocExecutor__session._dataproc_job_client.cancel_job( self._DataprocExecutor__session.project_id,
+                                                                             self._DataprocExecutor__session.region,
+                                                                             self.__old_job_id)
+        while True:
+            old_job_status = self.get_old_job_state()
+            if old_job_status != 'CANCELLED':
+                sleep(1)
+            else:
+                print('Job {} was successfully cancelled.'.format(self.__old_job_id))
+                break
+
+    def get_old_job(self):
+        job = self._DataprocExecutor__session._dataproc_job_client.get_job(
+            self._DataprocExecutor__session.project_id,
+            self._DataprocExecutor__session.region,
+            self.__old_job_id)
+        return job
+
+    def submit_upgrade_job(self, validator, validator_path, run_async=True):
+        job = self.submit_job(run_async=run_async)
+        validator_class = validator_path[validator](job, self._DataprocExecutor__session)
+        if validator_class.validate():
+            print('Validation of new version job is successful')
+            self.cancel_old_job()
+            return job
+        else:
+            print("New job version doesn't meet the conditions or is invalid. Current working job version is {}. "
+                  "Logs of failed job are in {}".
+                  format(self.__old_job_id, job.driver_output_resource_uri))
+            self.cancel_job()
+            return self.get_old_job()
 
 

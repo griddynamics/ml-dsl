@@ -12,16 +12,11 @@
 import argparse
 import sys
 import re
-import json
+from runpy import run_path
 
 from IPython import get_ipython
 # noinspection PyUnresolvedReferences
 from google.cloud import dataproc_v1
-# noinspection PyUnresolvedReferences
-from google.cloud.dataproc_v1.gapic.transports import job_controller_grpc_transport
-from datetime import datetime
-# noinspection PyUnresolvedReferences
-from google.cloud.dataproc_v1.gapic import enums
 from google.cloud import logging
 
 from IPython.core.magic import magics_class, Magics, line_cell_magic, needs_local_scope, line_magic
@@ -34,10 +29,9 @@ from com.griddynamics.dsl.ml.jobs.builder import DataprocJobBuilder
 from com.griddynamics.dsl.ml.models.models import ModelBuilder
 from com.griddynamics.dsl.ml.settings.arguments import Arguments
 from com.griddynamics.dsl.ml.settings.artifacts import Artifact
-from com.griddynamics.dsl.ml.py_script import PyScript
 from com.griddynamics.dsl.ml.sessions import SessionFactory
 from com.griddynamics.dsl.ml.settings.description import Platform
-from com.griddynamics.dsl.ml.executors.executors import DataprocExecutor, AIPlatformJobExecutor
+from com.griddynamics.dsl.ml.executors.executors import *
 
 from com.griddynamics.dsl.ml.helpers import *
 
@@ -122,7 +116,7 @@ class ExecMagic(Magics):
                     print('Local SparkContext has been stopped automatically')
 
         os.makedirs(str(mldsl_path), exist_ok=True)
-
+        print("Temporary path: {}".format(str(mldsl_path / p_args.name)))
         with open(str(mldsl_path / p_args.name), 'w') as f:
             f.writelines(cell)
 
@@ -202,25 +196,9 @@ class ExecMagic(Magics):
             'yarn_applications': yarn_apps
         }
 
-    @line_magic
-    def py_data(self, py_path):
-        parser = argparse.ArgumentParser(prefix_chars=prefix)
-        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
-        parser.add_argument('--name', '-n', type=str, help='Name of script file', default='default.py', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='DemoProfile', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
-        parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
-                            action=JoinAction)
-        print("Parameters string = <<<{}>>>".format(py_path))
-        args = parser.parse_known_args(py_path.split())
+    @staticmethod
+    def build_data_job(args, prf):
         script_name = args[0].name
-        prf_name = args[0].profile
-        prf = Profile.get(prf_name)
-        if prf is None:
-            raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
-
         args_dct = ExecMagic.convert(args[1])
 
         builder = DataprocJobBuilder()
@@ -228,6 +206,7 @@ class ExecMagic(Magics):
                                                                           cluster=prf.cluster,
                                                                           job_project_id=prf.project,
                                                                           ml_region=prf.ai_region)
+
         job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
         output_path = '{}/{}'.format(args[0].output_path, job_name)
         args_dct['--output_path'] = output_path
@@ -240,15 +219,40 @@ class ExecMagic(Magics):
                .arguments(arguments)
                .build_job(prf))
 
+        return session, job, job_name, output_path
+
+    @line_magic
+    def py_data(self, py_path):
+        parser = argparse.ArgumentParser(prefix_chars=prefix)
+        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
+        parser.add_argument('--name', '-n', type=str, help='Name of script file', default='default.py', nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='DemoProfile', nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
+        parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
+                            action=JoinAction)
+        print("Parameters string = <<<{}>>>".format(py_path))
+
+        args = parser.parse_known_args(py_path.split())
+        prf_name = args[0].profile
+        prf = Profile.get(prf_name)
+        if prf is None:
+            raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
+
+        session, job, job_name, output_path = self.build_data_job(args, prf)
+
         # noinspection PyTypeChecker
         display(HTML('<a href="{url}/{job_name}?project={project}&region={region}">{job_name}</a>'.format(
             url=DATAPROC_JOBS_URL,
             job_name=job_name,
             project=prf.project,
             region=prf.region)))
+
         executor = DataprocExecutor(job, session)
         res = executor.submit_job(run_async=prf.job_async)
         job_tracker[job_name] = res
+
         # noinspection PyTypeChecker
         display(HTML('<a href="{url}/{output_path}?project={project}">Output Data {job_name}</a>'.format(
             url=STORAGE_BROWSER_URL,
@@ -444,7 +448,6 @@ class ExecMagic(Magics):
     def py_instance(self, line):
         _variables["instance"] = line
 
-
     @line_magic
     def py_test(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
@@ -521,6 +524,56 @@ class ExecMagic(Magics):
         for entry in logging_client.list_entries(projects=args[0].project_id, filter_=FILTER, order_by=order_by,
                                                  page_size=args[0].page_size):
             print('\t'.join([entry.timestamp.strftime("%m/%d/%Y, %H:%M:%S"), entry.payload["message"]]))
+
+    @line_magic
+    def job_upgrade(self, py_path):
+        parser = argparse.ArgumentParser(prefix_chars=prefix)
+        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
+        parser.add_argument('--name', '-n', type=str, help='Name of script file', default='default.py', nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='DemoProfile', nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--old_job_id', type=str, help='ID of old version job', default=None, nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--validator', '-v', help='name of class Validator', type=str, nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--validator_path', '-vp', help='path of file with class Validator', type=str, nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
+        parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
+                            action=JoinAction)
+        print("Parameters string = <<<{}>>>".format(py_path))
+
+        args = parser.parse_known_args(py_path.split())
+        prf_name = args[0].profile
+        prf = Profile.get(prf_name)
+        if prf is None:
+            raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
+
+        session, job, job_name, output_path = self.build_data_job(args, prf)
+
+        # noinspection PyTypeChecker
+        display(HTML('<a href="{url}/{job_name}?project={project}&region={region}">{job_name}</a>'.format(
+            url=DATAPROC_JOBS_URL,
+            job_name=job_name,
+            project=prf.project,
+            region=prf.region)))
+
+        validator_module = run_path(args[0].validator_path)
+
+        executor = JobUpgradeExecutor(job, session, args[0].old_job_id)
+        res = executor.submit_upgrade_job(validator=args[0].validator, validator_path=validator_module,
+                                          run_async=prf.job_async)
+        job_tracker[job_name] = res
+        # noinspection PyTypeChecker
+        display(JSON(ExecMagic.py_data_dict(res)))
+
+        job_reference = [
+            '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
+            "job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
+        ]
+        get_ipython().set_next_input('\n'.join(job_reference))
+
 
 try:
     get_ipython().register_magics(ExecMagic)
