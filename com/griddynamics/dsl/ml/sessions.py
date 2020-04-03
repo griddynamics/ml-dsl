@@ -39,7 +39,6 @@ class CompositeSession:
     def get_ml_session(self):
         return self.__ml_session
 
-
     def __build(self, job_bucket, job_region, cluster, job_project_id, platform,
                 job_path='jobs-root', ml_region=None, ml_project_id=None, ml_bucket=None,
                 use_cloud_engine_credentials=False):
@@ -56,7 +55,6 @@ class CompositeSession:
             ml_region = job_region
         if ml_bucket is None:
             ml_bucket = job_bucket
-
         self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, platform, None,
                                     use_cloud_engine_credentials=use_cloud_engine_credentials)
 
@@ -66,6 +64,7 @@ class CompositeSession:
         if self.__ml_session is None and self.__job_session is None:
             self.__build(job_bucket, job_region, cluster, job_project_id, platform, job_path, ml_region,
                          ml_project_id, ml_bucket, use_cloud_engine_credentials=use_cloud_engine_credentials)
+
 
 class Session:
     """Session of current run"""
@@ -185,7 +184,8 @@ class GCPSessionFactory(AbstractSessionFactory):
                                                                      project_local_root,
                                                                      ml_region,
                                                                      ml_project_id, ml_bucket,
-                                                                     platform='GCP', use_cloud_engine_credentials)
+                                                                     use_cloud_engine_credentials=use_cloud_engine_credentials,
+                                                                     platform='GCP')
         return GCPSessionFactory.__composite_session
 
 
@@ -197,12 +197,13 @@ class AWSSessionFactory(AbstractSessionFactory):
 
     @staticmethod
     def build_session(job_bucket, job_region, cluster, job_project_id, ml_region=None, project_local_root='jobs-root',
-                      project_env_root='', ml_project_id=None, ml_bucket=None):
+                      project_env_root='', ml_project_id=None, ml_bucket=None, use_cloud_engine_credentials=False,
+                      platform='AWS'):
         if AWSSessionFactory.__composite_session is None:
             AWSSessionFactory.__composite_session = CompositeSession(job_bucket, job_region, cluster, job_project_id,
                                                                      project_local_root,
                                                                      ml_region,
                                                                      ml_project_id, ml_bucket,
+                                                                     use_cloud_engine_credentials=use_cloud_engine_credentials,
                                                                      platform='AWS')
-
         return AWSSessionFactory.__composite_session
