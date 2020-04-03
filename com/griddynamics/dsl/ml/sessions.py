@@ -17,6 +17,8 @@ from google.cloud import dataproc_v1
 from google.cloud.dataproc_v1.gapic.transports import job_controller_grpc_transport
 from googleapiclient import discovery
 
+import boto3
+
 from pathlib import Path
 from com.griddynamics.dsl.ml.settings.description import Platform
 
@@ -36,9 +38,9 @@ class CompositeSession:
     def get_ml_session(self):
         return self.__ml_session
 
-    def __build(self, job_bucket, job_region, cluster, job_project_id, job_path='jobs-root', ml_region=None,
-                ml_project_id=None, ml_bucket=None):
-        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, job_path)
+    def __build(self, job_bucket, job_region, cluster, job_project_id, platform,
+                job_path='jobs-root', ml_region=None, ml_project_id=None, ml_bucket=None):
+        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, platform, job_path)
         if ml_project_id is None:
             ml_project_id = job_project_id
         if ml_region is None:
@@ -46,20 +48,18 @@ class CompositeSession:
         if ml_bucket is None:
             ml_bucket = job_bucket
 
-        self.__job_session = Session(job_bucket, job_region, cluster, job_project_id, job_path)
-        self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, None)
+        self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, platform, None)
 
     def __init__(self, job_bucket, job_region, cluster, job_project_id, job_path, ml_region,
-                 ml_project_id, ml_bucket):
+                 ml_project_id, ml_bucket, platform):
         if self.__ml_session is None and self.__job_session is None:
-            self.__build(job_bucket, job_region, cluster, job_project_id, job_path, ml_region,
+            self.__build(job_bucket, job_region, cluster, job_project_id, platform, job_path, ml_region,
                          ml_project_id, ml_bucket)
 
 
 class Session:
     """Session of current run"""
-
-    def __init__(self, bucket, zone, cluster, project_id, job_path='jobs-root'):
+    def __init__(self, bucket, zone, cluster, project_id, platform, job_path='jobs-root'):
         self.__bucket = bucket
         self.__jobs_path = job_path
         self.__zone = zone
@@ -67,22 +67,27 @@ class Session:
         self.__project_id = project_id
         self.__region = None
         self.__cluster_uuid = None
+        self.__platform = platform
 
-        if self.__zone == 'global':
-            self.__region = self.__zone
-        else:
-            self.__region = self.get_region_from_zone(self.__zone)
-
-        if cluster is None and job_path is None:
-            self._cloudml = discovery.build('ml', 'v1')
-        else:
-            if self.zone == 'global':
-                self._dataproc_job_client = dataproc_v1.JobControllerClient()
+        if self.__platform == 'GCP':
+            if self.__zone == 'global':
+                self.__region = self.__zone
             else:
-                job_transport = (
-                    job_controller_grpc_transport.JobControllerGrpcTransport(
-                        address='{}-dataproc.googleapis.com:443'.format(self.__region)))
-                self._dataproc_job_client = dataproc_v1.JobControllerClient(job_transport)
+                self.__region = self.get_region_from_zone(self.__zone)
+
+            if cluster is None and job_path is None:
+                self._cloudml = discovery.build('ml', 'v1')
+            else:
+                if self.zone == 'global':
+                    self._dataproc_job_client = dataproc_v1.JobControllerClient()
+                else:
+                    job_transport = (
+                        job_controller_grpc_transport.JobControllerGrpcTransport(
+                            address='{}-dataproc.googleapis.com:443'.format(self.__region)))
+                    self._dataproc_job_client = dataproc_v1.JobControllerClient(job_transport)
+        else:
+            self._session = boto3.Session()
+
 
     @staticmethod
     def get_region_from_zone(zone):
@@ -147,7 +152,7 @@ class SessionFactory:
         if platform is Platform.GCP:
             return GCPSessionFactory()
         elif platform is Platform.AWS:
-            return AbstractSessionFactory()
+            return AWSSessionFactory()
         else:
             ValueError("Unsupported Platform")
 
@@ -165,6 +170,26 @@ class GCPSessionFactory(AbstractSessionFactory):
             GCPSessionFactory.__composite_session = CompositeSession(job_bucket, job_region, cluster, job_project_id,
                                                                      project_local_root,
                                                                      ml_region,
-                                                                     ml_project_id, ml_bucket)
+                                                                     ml_project_id, ml_bucket,
+                                                                     platform='GCP')
 
         return GCPSessionFactory.__composite_session
+
+
+class AWSSessionFactory(AbstractSessionFactory):
+    __composite_session = None
+
+    def get_session(self):
+        return self.__composite_session
+
+    @staticmethod
+    def build_session(job_bucket, job_region, cluster, job_project_id, ml_region=None, project_local_root='jobs-root',
+                      project_env_root='', ml_project_id=None, ml_bucket=None):
+        if AWSSessionFactory.__composite_session is None:
+            AWSSessionFactory.__composite_session = CompositeSession(job_bucket, job_region, cluster, job_project_id,
+                                                                     project_local_root,
+                                                                     ml_region,
+                                                                     ml_project_id, ml_bucket,
+                                                                     platform='AWS')
+
+        return AWSSessionFactory.__composite_session

@@ -12,14 +12,15 @@
 from json import JSONEncoder
 from com.griddynamics.dsl.ml.py_script import PyScript
 from com.griddynamics.dsl.ml.settings.arguments import Arguments
-from com.griddynamics.dsl.ml.helpers import *
+from com.griddynamics.dsl.ml.settings.description import Platform
+from com.griddynamics.dsl.ml.helpers import Helper, Path
 
 
 class PySparkJob(JSONEncoder):
     """PySpark job model
     """
 
-    def __init__(self, py_spark_job=None):
+    def __init__(self, py_spark_job=None, platform=Platform.GCP):
         super().__init__()
         if py_spark_job:
             self.__job_file = py_spark_job.main_python_file_uri
@@ -30,6 +31,7 @@ class PySparkJob(JSONEncoder):
             self.__jars = py_spark_job.jar_file_uris
             self.__archives = py_spark_job.archive_uris
             self.__logging = py_spark_job.logging_config
+            self.__platform = platform
 
         else:
             self.__job_file: Path = None
@@ -38,6 +40,7 @@ class PySparkJob(JSONEncoder):
             self.__args = []
             self.__properties = {}
             self.__jars = []
+            self.__packages = []
             self.__archives = []
             self.__logging = None
             self.__files_root = Path('')
@@ -47,6 +50,7 @@ class PySparkJob(JSONEncoder):
             self.__py_scripts = []
             self.__max_failures = 0
             self.__labels = {}
+            self.__platform = platform
 
     @property
     def labels(self):
@@ -97,6 +101,10 @@ class PySparkJob(JSONEncoder):
         return self.__jars
 
     @property
+    def packages(self):
+        return self.__packages
+
+    @property
     def archives(self):
         return self.__archives
 
@@ -121,7 +129,7 @@ class PySparkJob(JSONEncoder):
     def job_file(self, val: str, base_path=None):
         if base_path is None:
             base_path = self.files_root
-        job_file = GCPHelper.construct_path(val, base_path)
+        job_file = Helper.construct_path(val, base_path, self.__platform)
         self.__job_file = job_file
 
     @run_async.setter
@@ -149,7 +157,7 @@ class PySparkJob(JSONEncoder):
     def py_files(self, val: str, base_path=None):
         if base_path is None:
             base_path = self.files_root
-        py_file = GCPHelper.construct_path(val, base_path)
+        py_file = Helper.construct_path(val, base_path, self.__platform)
         self.__py_files.append(py_file)
 
     @py_scripts.setter
@@ -160,7 +168,7 @@ class PySparkJob(JSONEncoder):
     def files(self, val: str, base_path=None):
         if base_path is None:
             base_path = self.files_root
-        file = GCPHelper.construct_path(val, base_path)
+        file = Helper.construct_path(val, base_path, self.__platform)
         self.__files.append(file)
 
     @properties.setter
@@ -171,14 +179,18 @@ class PySparkJob(JSONEncoder):
     def archives(self, val: str, base_path=None):
         if base_path is None:
             base_path = self.files_root
-        arch = GCPHelper.construct_path(val, base_path)
+        arch = Helper.construct_path(val, base_path, self.__platform)
         self.__archives.append(arch)
+
+    @packages.setter
+    def packages(self, val: list):
+        self.__packages = val
 
     @jars.setter
     def jars(self, val: str, base_path=None):
         if base_path is None:
             base_path = self.files_root
-        jar = GCPHelper.construct_path(val, base_path)
+        jar = Helper.construct_path(val, base_path, self.__platform)
         self.__jars.append(jar)
 
     @args.setter
@@ -188,9 +200,7 @@ class PySparkJob(JSONEncoder):
     @staticmethod
     def generate_run_script(py_script: PyScript) -> PyScript:
         module = "".join(py_script.name.split(".")[:-1])
-
         module_part = py_script.name.split(".")[0] if module is None else module
-
         run_script = """from {} import {}\nif __name__ == '__main__':\n\t{}.run()""".format(module_part,
                                                                                             py_script.class_name,
                                                                                             py_script.class_name)
@@ -215,6 +225,8 @@ class PySparkJob(JSONEncoder):
             self.logging = profile.logging
         if profile.max_failures:
             self.max_failures = profile.max_failures
+        if profile.packages:
+            self.packages = profile.packages
         if profile.args:
             arguments = Arguments()
             arguments.set_args(**profile.args)
@@ -238,5 +250,3 @@ class PySparkJob(JSONEncoder):
             self.__logging = json.get('logging_config')
         if json.get('properties'):
             self.__properties = json.get('properties')
-
-

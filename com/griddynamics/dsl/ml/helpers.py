@@ -9,7 +9,6 @@
 # Project:     ML Platform
 # Description: DSL to configure and execute ML/DS pipelines
 
-import distutils
 import importlib
 import os
 from pathlib import Path
@@ -20,17 +19,10 @@ from google.cloud import storage
 
 import boto3
 from botocore.exceptions import ClientError
+from com.griddynamics.dsl.ml.settings.description import Platform
 
 
 class Helper:
-
-    @staticmethod
-    def build_package(name, script_names: [], script_args=None, version="1.0", requires=None):
-        distutils.core.setup(scripts=script_names,
-                             name=name,
-                             version=version,
-                             requires=requires,
-                             script_args=script_args)
 
     @staticmethod
     def get_file(file):
@@ -57,6 +49,13 @@ class Helper:
     @staticmethod
     def build_package_name_from_params(kwargs, extension):
         return f"{kwargs['name']}-{kwargs['version']}.{extension}"
+
+    @staticmethod
+    def construct_path(filename: str, base_path, platform=Platform.GCP):
+        if platform ==Platform.GCP:
+            return filename if filename.startswith('gs://') else Path(base_path) / filename
+        else:
+            return filename if filename.startswith('s3://') else Path(base_path) / filename
 
 
 class GCPHelper(Helper):
@@ -113,21 +112,14 @@ class GCPHelper(Helper):
         source_bucket.copy_blob(
             source_blob, destination_bucket, new_blob_name.replace(f'gs://{new_bucket_name}/', ""))
 
-    @staticmethod
-    def construct_path(filename: str, base_path):
-        return filename if filename.startswith('gs://') else Path(base_path) / filename
-
 
 class AWSHelper(Helper):
 
     @staticmethod
     def delete_path_from_storage(bucket_name, path):
-        s3 = boto3.client('s3')
-        # Delete the object
-        try:
-            s3.delete_object(Bucket=bucket_name, Key=path)
-        except ClientError as e:
-            raise e
+        s3 = boto3.resource('s3')
+        bucket = s3.Bucket(bucket_name)
+        bucket.objects.filter(Prefix=path).delete()
 
     @staticmethod
     def copy_folder_on_storage(bucket_name, path_from: str, path_to: str):
@@ -158,20 +150,25 @@ class AWSHelper(Helper):
         # Upload the file
         s3_client = boto3.client('s3')
         try:
-            response = s3_client.upload_file(file_name, bucket, object_name)
+            s3_client.upload_file(file_name, bucket, object_name)
         except ClientError as e:
             raise e
 
     @staticmethod
-    def copy_object(src_bucket_name, src_object_name, dest_bucket_name=None, dest_object_name=None):
-        copy_source = {'Bucket': src_bucket_name, 'Key': src_object_name}
+    def copy_object(source_bucket, source_object_name, dest_bucket=None, dest_object_name=None):
+        copy_source = {'Bucket': source_bucket, 'Key': source_object_name}
         if dest_object_name is None:
-            dest_object_name = src_object_name
-        if dest_bucket_name is None:
-            dest_bucket_name = src_bucket_name
+            dest_object_name = source_object_name
+        if dest_bucket is None:
+            dest_bucket = source_bucket
         # Copy the object
         s3 = boto3.client('s3')
         try:
-            s3.copy_object(CopySource=copy_source, Bucket=dest_bucket_name, Key=dest_object_name)
+            s3.copy_object(CopySource=copy_source, Bucket=dest_bucket, Key=dest_object_name)
         except ClientError as e:
             raise e
+
+    @staticmethod
+    def upload_object_to_storage(obj, bucket, object_name):
+        client = boto3.client('s3')
+        client.put_object(Body=obj, Bucket=bucket, Key=object_name)

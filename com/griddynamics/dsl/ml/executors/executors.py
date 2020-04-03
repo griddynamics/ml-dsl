@@ -358,22 +358,16 @@ class DataprocExecutor(Executor):
             while (len(self.__yarn_app) == 0) or (self.job_status != 'RUNNING'):
                 job = self.get_job()
                 sleep(1)
-            return job
+            return self.job_description(job)
         else:
             return self.__wait_for_job()
 
     def __upload_files(self):
         if self.__job.job_file:
             self.upload_file_to_gs_job_path(self.__job.job_file)
-
-        for jar in self.__job.jars:
-            self.upload_file_to_gs_job_path(jar)
-        for py in self.__job.py_files:
-            self.upload_file_to_gs_job_path(py)
-        for arch in self.__job.archives:
-            self.upload_file_to_gs_job_path(arch)
-        for f in self.__job.files:
-            self.upload_file_to_gs_job_path(f)
+        for files in [self.__job.jars, self.__job.py_files, self.__job.archives, self.__job.files]:
+            for file in files:
+                self.upload_file_to_gs_job_path(file)
         for s in self.__job.py_scripts:
             self.upload_script_to_gs_job_path(s)
 
@@ -443,7 +437,7 @@ class DataprocExecutor(Executor):
                     print('Job STATUS was set to {} at {}'.format(self.job_status,
                                                                   datetime.fromtimestamp(
                                                                       job.status.state_start_time.seconds)))
-                    return job
+                    return self.job_description(job)
                 sleep(1)
 
         except KeyboardInterrupt:
@@ -517,16 +511,14 @@ class DataprocExecutor(Executor):
         return 'gs://{}/{}/{}/{}'.format(self.__session.bucket, self.__session.jobs_path, self.__job.job_id,
                                          script.name)
 
-    def __build_job_description(self):
-        session = self.__session
-        job = self.__job
+    def __build_job_description(self, job=None):
         self.__job_description = {
             "reference": {
-                "project_id": session.project_id,
-                "job_id": job.job_id
+                "project_id": self.__session.project_id,
+                "job_id": self.__job.job_id
             },
             'placement': {
-                'cluster_name': session.cluster
+                'cluster_name': self.__session.cluster
             },
             'labels': self.__job.labels,
             'pyspark_job': {
@@ -534,20 +526,28 @@ class DataprocExecutor(Executor):
                     self.__job.job_file) if self.__job.job_file else self.__file_path_to_gs_path(
                     self.__job.task_script.name),
                 'args': self.__job.args,
-                'python_file_uris': list(map(self.__file_path_to_gs_path, job.py_files)) + list(
-                    map(self.__py_script_to_gs_path, job.py_scripts)),
-                'file_uris': list(map(self.__file_path_to_gs_path, job.files)),
-                'jar_file_uris': list(map(self.__file_path_to_gs_path, job.jars)),
-                'archive_uris': list(map(self.__file_path_to_gs_path, job.archives)),
-                'logging_config': job.logging,
-                'properties': job.properties
+                'python_file_uris': list(map(self.__file_path_to_gs_path, self.__job.py_files)) + list(
+                    map(self.__py_script_to_gs_path, self.__job.py_scripts)),
+                'file_uris': list(map(self.__file_path_to_gs_path, self.__job.files)),
+                'jar_file_uris': list(map(self.__file_path_to_gs_path, self.__job.jars)),
+                'archive_uris': list(map(self.__file_path_to_gs_path, self.__job.archives)),
+                'logging_config': self.__job.logging,
+                'properties': self.__job.properties
             },
             'scheduling': self.__scheduling,
         }
+        if job:
+            yarn_apps = [{'name': i.name, 'state': enums.YarnApplication.State(i.state).name,
+                      'progress': i.progress, 'trackingUrl': i.tracking_url} for i in job.yarn_applications]
+            self.__job_description['yarn_applications'] = yarn_apps
+            self.__job_description['driver_control_files_uri'] = job.driver_control_files_uri
+            self.__job_description['driver_output_resource_uri'] = job.driver_output_resource_uri
+            self.__job_description['start_time'] = datetime.fromtimestamp(job.status.state_start_time.seconds)
+            self.__job_description['status'] = enums.JobStatus.State(job.status.state).name
         return self.__job_description
 
-    def job_description(self):
-        return self.__build_job_description()
+    def job_description(self, job):
+        return self.__build_job_description(job)
 
     def download_output(self):
         return self.download_output_from_gs()
@@ -567,7 +567,7 @@ class JobUpgradeExecutor(DataprocExecutor):
 
     def cancel_old_job(self):
         print("Canceling job: {}".format(self.__old_job_id))
-        self._DataprocExecutor__session._dataproc_job_client.cancel_job( self._DataprocExecutor__session.project_id,
+        self._DataprocExecutor__session._dataproc_job_client.cancel_job(self._DataprocExecutor__session.project_id,
                                                                              self._DataprocExecutor__session.region,
                                                                              self.__old_job_id)
         while True:
@@ -595,8 +595,233 @@ class JobUpgradeExecutor(DataprocExecutor):
         else:
             print("New job version doesn't meet the conditions or is invalid. Current working job version is {}. "
                   "Logs of failed job are in {}".
-                  format(self.__old_job_id, job.driver_output_resource_uri))
+                  format(self.__old_job_id, job['driver_output_resource_uri']))
             self.cancel_job()
-            return self.get_old_job()
+            job = self.get_job()
+            return self.job_description(job)
+
+
+class EmrExecutor(Executor):
+    """Implementation of executor for Emr"""
+
+    def __init__(self, job: PySparkJob, session: CompositeSession):
+        self.__job = job
+        self.__session = session.get_job_session()
+        self.__client = self.__session._session.client('emr')
+        self.job_status = {}
+        self.__yarn_app = []
+        self.__cluster_uuid = None
+        self.__source_emr = '/home/hadoop/{}/'.format(self.__job.job_id)
+        self.__step_ids = []
+        self.__job_description = None
+
+    def __check_cluster(self, client):
+        clusters = client.list_clusters()
+        run_clusters = [i for i in clusters['Clusters'] if
+                        i['Name'] == 'ai4ops' and i['Status']['State'] in ['RUNNING', 'WAITING']]
+        if len(run_clusters) == 0:
+            # self.__create_cluster()
+            # TODO: functions to start and terminate emr cluster
+            print('Please start EMR cluster before!')
+        else:
+            self.__cluster_uuid = run_clusters[0]['Id']
+
+    def __prepare_job_args(self, start_job_list):
+        start_job_list.append(self.__file_path_to_s3_path(self.__job.py_scripts[0].name))
+        start_job_list.extend(self.__job.args)
+        return start_job_list
+
+    def __prepare_job_options(self):
+        option_list = ["spark-submit", "--master", "yarn"]
+        options_dct = {
+            '--jars': self.__job.jars,
+            '--py-files': self.__job.py_files,
+            '--archives': self.__job.archives,
+            '--packages': self.__job.packages,
+            '--files': self.__job.files
+        }
+        for k, v in options_dct.items():
+            if len(v) > 0:
+                if k == '--packages':
+                    option_list.extend([k, ','.join([str(i) for i in v])])
+
+                else:
+                    option_list.extend([k, ','.join([self.__source_emr + Helper.get_file_name(i) for i in v])])
+        return option_list
+
+    @staticmethod
+    def define_job_flow_step(name, action_on_failure, hadoop_jar_step):
+        return {'Name': name, 'ActionOnFailure': action_on_failure, 'HadoopJarStep': hadoop_jar_step}
+
+    def define_copy_file_step(self, name):
+        copy_emr_step = {
+            'Jar': 'command-runner.jar',
+            'Args': ['aws', 's3', 'cp', self.__file_path_to_s3_path(name), f'{self.__source_emr}{name}']
+        }
+        return self.define_job_flow_step(f'Copy {name} to EMR source', 'CANCEL_AND_WAIT', copy_emr_step)
+
+    def submit_job(self, run_async):
+        files_list = [self.__job.py_scripts, self.__job.py_files,
+                      self.__job.files, self.__job.jars, self.__job.archives]
+        self.__check_cluster(self.__client)
+        self.__upload_files_to_s3(files_list)
+        self.__job.properties['spark.yarn.maxAppAttempts'] = str(self.__job.max_failures)
+        steps = []
+        for files in files_list:
+            for file in files:
+                if file.name is None:
+                    name = file
+                else:
+                    name = file.name
+                steps.append(self.define_copy_file_step(name))
+
+        py_spark_job_step = {
+            'Jar': 'command-runner.jar',
+            'Args': self.__prepare_job_args(self.__prepare_job_options()),
+            'Properties': [{"Key": k, "Value": v} for k, v in self.__job.properties.items()]
+        }
+        steps.append(self.define_job_flow_step(f'PySparkJob{self.__job.job_id}',
+                                               'CANCEL_AND_WAIT', py_spark_job_step))
+
+        print(f"Submitting {self.__job.job_id} to cluster {self.__session.cluster}")
+        response = self.__client.add_job_flow_steps(JobFlowId=self.__cluster_uuid, Steps=steps)
+        self.__step_ids = response['StepIds']
+
+        if run_async:
+            step_done = False
+            state = 'STATE_UNSPECIFIED'
+            while (state != 'RUNNING') and not step_done:
+                state, step, step_done = self._get_step_status(self.__step_ids[-1])
+                sleep(1)
+            self.delete_s3_folder_source()
+            return self.job_description()
+        else:
+            return self.__wait_for_job()
+
+    def __upload_files_to_s3(self, files):
+        if self.__job.job_file:
+            self.upload_file_to_s3_job_path(self.__job.job_file)
+        for files in files[1:]:
+            for file in files:
+                self.upload_file_to_s3_job_path(file)
+        for script in self.__job.py_scripts:
+            self.upload_script_to_s3_job_path(script)
+
+    def _get_step_status(self, step_id):
+        step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
+        state = step['Step']['Status']['State']
+        failed = state in ['FAILED', 'CANCELLED']
+        success = state in ['COMPLETED']
+        step_done = success or failed
+        return state, step, step_done
+
+    def get_job_state(self):
+        response = self.__client.list_steps(ClusterId=self.__cluster_uuid, StepIds=self.__step_ids)
+        for step in response['Steps']:
+            self.job_status[step['Name']] = step['Status']['State']
+        return self.job_status
+
+    def get_job(self):
+        job = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=self.__step_ids[-1])
+        return job
+
+    def cancel_job(self):
+        print("Canceling job: {}".format(self.__job.job_id))
+        self.__client.cancel_steps(ClusterId=self.__cluster_uuid, StepIds=self.__step_ids,
+                                   StepCancellationOption='SEND_INTERRUPT')
+        for step_id in self.__step_ids:
+            step_done = False
+            while not step_done:
+                state, step, step_done = self._get_step_status(step_id)
+                if state == 'CANCELLED':
+                    print('Step {} with id was successfully cancelled.'.format(step['Step']['Name'],
+                                                                               step['Step']['Id']))
+                    break
+                else:
+                    sleep(1)
+
+    def __wait_for_job(self):
+        try:
+            for step_id in self.__step_ids:
+                cur_state = 'STATE_UNSPECIFIED'
+                step_done = False
+                while not step_done:
+                    state, step, step_done = self._get_step_status(step_id)
+                    if state != cur_state:
+                        cur_state = state
+                        print(f"Step {step['Step']['Name']} change state to {cur_state}")
+                    sleep(1)
+        except KeyboardInterrupt:
+            self.cancel_job()
+        self.delete_s3_folder_source()
+        return self.job_description()
+
+    def upload_file_to_s3_job_path(self, file_path):
+        if file_path and not str(file_path).startswith("s3://"):
+            file_name = Helper.get_file_name(file_path)
+            print(f"Copy {file_name} to S3://{self.__session.bucket}/emr/"
+                  f"{self.__cluster_uuid}/{self.__job.job_id}/{file_name}")
+            AWSHelper.upload_file_to_storage(self.__session.bucket, str(file_path),
+                                             f'emr/{self.__cluster_uuid}/{self.__job.job_id}/{file_name}')
+
+    def upload_script_to_s3_job_path(self, script):
+        print(f"Copy {script.name} to S3://{self.__session.bucket}/emr/"
+              f"{self.__cluster_uuid}/{self.__job.job_id}/{script.name}")
+        AWSHelper.upload_object_to_storage(script.script, self.__session.bucket,
+                                           f'emr/{self.__cluster_uuid}/{self.__job.job_id}/{script.name}')
+
+    def delete_s3_folder_source(self):
+        AWSHelper.delete_path_from_storage(self.__session.bucket, f'emr/{self.__cluster_uuid}/{self.__job.job_id}/')
+
+    def __file_path_to_s3_path(self, path):
+        return path if str(path).startswith("s3://") else 's3://{}/emr/{}/{}/{}'.format(self.__session.bucket,
+                                                                                        self.__cluster_uuid,
+                                                                                        self.__job.job_id,
+                                                                                        Helper.get_file_name(str(path)))
+
+    def download_output(self):
+        return self.download_output_from_s3()
+
+    ##TODO
+    def download_output_from_s3(self):
+        """Downloads the output file from s3 and."""
+        pass
+
+    def __build_job_description(self):
+        job = self.get_job()
+        output_source = self.__client.describe_cluster(ClusterId=self.__cluster_uuid)['Cluster']['LogUri']
+        self.__job_description = {
+            "reference": {
+                "job_id": self.__job.job_id
+            },
+            'placement': {
+                'cluster_name': self.__session.cluster,
+                'cluster_id': self.__cluster_uuid,
+                'step_id': self.__step_ids[-1]
+            },
+            'output_resource_uri': f'{output_source}{self.__cluster_uuid}/steps/{self.__step_ids[-1]}',
+            'status': {
+                'state': job['Step']['Status']['State'],
+                'state_start_time': job['Step']['Status']['Timeline']['StartDateTime']
+            },
+            'labels': self.__job.labels,
+            'pyspark_job': {
+                'main_python_file_uri': self.__file_path_to_s3_path(
+                    self.__job.job_file) if self.__job.job_file else self.__file_path_to_s3_path(
+                    self.__job.task_script.name),
+                'args': self.__job.args,
+                'python_file_uris': list(map(self.__file_path_to_s3_path, self.__job.py_files)) + list(
+                    map(self.__file_path_to_s3_path, self.__job.py_scripts)),
+                'file_uris': list(map(self.__file_path_to_s3_path, self.__job.files)),
+                'jar_file_uris': list(map(self.__file_path_to_s3_path, self.__job.jars)),
+                'archive_uris': list(map(self.__file_path_to_s3_path, self.__job.archives)),
+                'logging_config': self.__job.logging,
+                'properties': self.__job.properties
+            },
+        }
+        return self.__job_description
+
+    def job_description(self):
+        return self.__build_job_description()
 
 

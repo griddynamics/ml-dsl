@@ -25,7 +25,7 @@ from pyspark import SparkContext
 
 from com.griddynamics.dsl.ml.settings.profiles import Profile, AIProfile
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJobBuilder
-from com.griddynamics.dsl.ml.jobs.builder import DataprocJobBuilder
+from com.griddynamics.dsl.ml.jobs.builder import JobBuilder
 from com.griddynamics.dsl.ml.models.models import ModelBuilder
 from com.griddynamics.dsl.ml.settings.arguments import Arguments
 from com.griddynamics.dsl.ml.settings.artifacts import Artifact
@@ -41,6 +41,7 @@ _variables = {}
 prefix = '-'
 DATAPROC_JOBS_URL = 'https://console.cloud.google.com/dataproc/jobs'
 STORAGE_BROWSER_URL = 'https://console.cloud.google.com/storage/browser'
+S3_BROWSER_URL = 'https://console.aws.amazon.com/s3/buckets'
 AI_JOBS_URL = 'https://console.cloud.google.com/ai-platform/jobs'
 
 
@@ -178,35 +179,16 @@ class ExecMagic(Magics):
         return {k: ' '.join(v) for k, v in a_dct.items()}
 
     @staticmethod
-    def py_data_dict(job):
-        yarn_apps = [{'name': i.name, 'state': enums.YarnApplication.State(i.state).name,
-                      'progress': i.progress, 'trackingUrl': i.tracking_url} for i in job.yarn_applications]
-        return {
-            'project_id': job.reference.project_id,
-            'job_id': job.reference.job_id,
-            'cluster_name': job.placement.cluster_name,
-            'pyspark_job': {
-                'main_python_file_uri': job.pyspark_job.main_python_file_uri,
-                'args': list(job.pyspark_job.args)
-            },
-            'status': enums.JobStatus.State(job.status.state).name,
-            'start_time': datetime.fromtimestamp(job.status.state_start_time.seconds),
-            'driver_control_files_uri': job.driver_control_files_uri,
-            'driver_output_resource_uri': job.driver_output_resource_uri,
-            'yarn_applications': yarn_apps
-        }
-
-    @staticmethod
     def build_data_job(args, prf):
         script_name = args[0].name
         args_dct = ExecMagic.convert(args[1])
 
-        builder = DataprocJobBuilder()
-        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket, job_region=prf.region,
+        builder = JobBuilder(args[0].platform)
+        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket,
+                                                                          job_region=prf.region,
                                                                           cluster=prf.cluster,
                                                                           job_project_id=prf.project,
                                                                           ml_region=prf.ai_region)
-
         job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
         output_path = '{}/{}'.format(args[0].output_path, job_name)
         args_dct['--output_path'] = output_path
@@ -217,7 +199,7 @@ class ExecMagic(Magics):
                .task_script(script_name, _py_scripts)
                .job_id(job_name)
                .arguments(arguments)
-               .build_job(prf))
+               .build_job(prf, args[0].platform))
 
         return session, job, job_name, output_path
 
@@ -242,31 +224,36 @@ class ExecMagic(Magics):
 
         session, job, job_name, output_path = self.build_data_job(args, prf)
 
-        # noinspection PyTypeChecker
-        display(HTML('<a href="{url}/{job_name}?project={project}&region={region}">{job_name}</a>'.format(
-            url=DATAPROC_JOBS_URL,
-            job_name=job_name,
-            project=prf.project,
-            region=prf.region)))
+        if args[0].platform == Platform.GCP:
+            # noinspection PyTypeChecker
+            display(HTML('<a href="{url}/{job_name}?project={project}&region={region}">{job_name}</a>'.format(
+                url=DATAPROC_JOBS_URL,
+                job_name=job_name,
+                project=prf.project,
+                region=prf.region)))
+            executor = DataprocExecutor(job, session)
+            res = executor.submit_job(run_async=prf.job_async)
+        else:
+            executor = EmrExecutor(job, session)
+            res = executor.submit_job(run_async=prf.job_async)
 
-        executor = DataprocExecutor(job, session)
-        res = executor.submit_job(run_async=prf.job_async)
         job_tracker[job_name] = res
+        # noinspection PyTypeChecker
 
-        # noinspection PyTypeChecker
-        display(HTML('<a href="{url}/{output_path}?project={project}">Output Data {job_name}</a>'.format(
-            url=STORAGE_BROWSER_URL,
-            output_path=output_path.split('gs://')[1],
+        display(HTML('<a href="{url}/{output_path}?{region}">Output Data {job_name}</a>'.format(
+            url=STORAGE_BROWSER_URL if args[0].platform == Platform.GCP else S3_BROWSER_URL,
+            output_path=output_path.split('gs://')[1] if args[0].platform == Platform.GCP
+            else f"{prf.bucket}/emr/{res['placement']['cluster_id']}/steps/{res['placement']['step_id']}/",
             job_name=job_name,
-            project=prf.project)))
-        # noinspection PyTypeChecker
-        display(JSON(ExecMagic.py_data_dict(res)))
+            region=f'project={prf.project}' if args[0].platform == Platform.GCP else f'region={prf.region}')))
 
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
             "job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
         ]
+        display(JSON(res))
         get_ipython().set_next_input('\n'.join(job_reference))
+
 
     @staticmethod
     def download_from_gs(bucket_name, project, output_path, job_name):
@@ -566,7 +553,7 @@ class ExecMagic(Magics):
                                           run_async=prf.job_async)
         job_tracker[job_name] = res
         # noinspection PyTypeChecker
-        display(JSON(ExecMagic.py_data_dict(res)))
+        display(JSON(res))
 
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
