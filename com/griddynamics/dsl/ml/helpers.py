@@ -16,6 +16,7 @@ from unittest import mock
 
 import setuptools
 from google.cloud import storage
+from google.auth import compute_engine
 
 import boto3
 from botocore.exceptions import ClientError
@@ -61,28 +62,38 @@ class Helper:
 class GCPHelper(Helper):
 
     @staticmethod
-    def delete_path_from_storage(bucket_name, path):
-        storage_client = storage.Client()
+    def delete_path_from_storage(bucket_name, path, use_cloud_engine_credentials=False):
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+
+        storage_client = storage.Client(credentials=credentials)
         bucket = storage_client.get_bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=path)
         for blob in blobs:
             blob.delete()
 
     @staticmethod
-    def copy_folder_on_storage(bucket_name, path_from: str, path_to: str):
+    def copy_folder_on_storage(bucket_name, path_from: str, path_to: str, use_cloud_engine_credentials=False):
         path_from = path_from.replace(f'gs://{bucket_name}/', "")
         path_to = path_to.replace(f'gs://{bucket_name}/', "")
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
 
-        storage_client = storage.Client()
+        storage_client = storage.Client(credentials=credentials)
         bucket = storage_client.get_bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=path_from)
         for blob in blobs:
             bucket.copy_blob(blob, bucket, path_to + blob.name.replace(path_from, path_to))
 
     @staticmethod
-    def download_folder_from_storage(bucket_name, path_from, path_to):
+    def download_folder_from_storage(bucket_name, path_from, path_to, use_cloud_engine_credentials=False):
         path_from = path_from.replace(f'gs://{bucket_name}/', "")
-        storage_client = storage.Client()
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+        storage_client = storage.Client(credentials=credentials)
         bucket = storage_client.get_bucket(bucket_name)
         blobs = bucket.list_blobs(prefix=path_from, delimiter="/")
 
@@ -91,20 +102,27 @@ class GCPHelper(Helper):
             blob.download_to_filename(destination_uri)
 
     @staticmethod
-    def upload_file_to_storage(project_id, bucket, file_path: str, gs_path):
+    def upload_file_to_storage(project_id, bucket, file_path: str, gs_path, use_cloud_engine_credentials=False):
         gs_path = gs_path.replace(f'gs://{bucket}/', "")
-        client = storage.Client(project=project_id)
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+        client = storage.Client(project=project_id, credentials=credentials)
         bucket = client.get_bucket(bucket)
         blob = bucket.blob('{}/{}'.format(gs_path, file_path.split('/')[-1]))
         blob.upload_from_filename(file_path)
 
     @staticmethod
-    def copy_file_on_storage(bucket_name, blob_name, new_blob_name, new_bucket_name=None):
+    def copy_file_on_storage(bucket_name, blob_name, new_blob_name, new_bucket_name=None,
+                             use_cloud_engine_credentials=False):
         """Copies a blob from one bucket to another with a new name."""
         if new_bucket_name is None:
             new_bucket_name = bucket_name
 
-        storage_client = storage.Client()
+        credentials = None
+        if use_cloud_engine_credentials:
+            credentials = compute_engine.Credentials()
+        storage_client = storage.Client(credentials=credentials)
         source_bucket = storage_client.get_bucket(bucket_name)
         source_blob = source_bucket.blob(blob_name.replace(f'gs://{bucket_name}/', ""))
         destination_bucket = storage_client.get_bucket(new_bucket_name)
