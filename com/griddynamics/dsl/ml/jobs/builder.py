@@ -13,9 +13,8 @@ from com.griddynamics.dsl.ml.settings.arguments import Arguments
 from com.griddynamics.dsl.ml.jobs.pyspark_job import PySparkJob
 
 
-class DataprocJobBuilder:
-    """Job builder implementation for Dataproc jobs
-    """
+class JobBuilder:
+    """Job builder implementation for jobs"""
     def files_root(self, files_root: str):
         self.__job.files_root = files_root
         return self
@@ -24,9 +23,6 @@ class DataprocJobBuilder:
         script = py_scripts[name]
         if script is None:
             raise ValueError(f"There is no defined script with name: {name}")
-
-        #         if script.class_name is None:
-        #             raise ValueError('Script for execution should be defined with --task flag')
         self.__job.task_script = script
         return self
 
@@ -43,18 +39,17 @@ class DataprocJobBuilder:
         self.__job.py_scripts = script
         return self
 
-    def __init__(self):
-        self.reset()
+    def __init__(self, platform):
+        self.reset(platform)
 
-    def reset(self):
-        self.__job = PySparkJob()
+    def reset(self, platform):
+        self.__job = PySparkJob(platform=platform)
 
-    def build_job(self, profile):
+    def build_job(self, profile, platform):
         if not (self.__job.job_file or self.__job.task_script):
             raise ValueError("Script for execution wasn't set")
-
         job = self.__job.from_profile(profile)
-        self.reset()
+        self.reset(platform)
         return job
 
     def job_file(self, val):
@@ -87,6 +82,10 @@ class DataprocJobBuilder:
 
     def jar(self, val):
         self.__job.jars = val
+        return self
+
+    def packages(self, val):
+        self.__job.packages = val
         return self
 
     def property(self, key, val):

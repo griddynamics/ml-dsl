@@ -9,6 +9,9 @@
 # Project:     ML Platform
 # Description: DSL to configure and execute ML/DS pipelines
 
+import json
+
+
 class Profile(object):
     _profiles = {}
 
@@ -41,6 +44,12 @@ class Profile(object):
                                   job_async=False)
                 Profile._profiles[name] = profile
         return profile
+
+    @staticmethod
+    def load_from_file(file_path):
+        with open(file_path, 'r') as fp:
+            field = json.load(fp)
+        return field
 
 
 class AIProfile(Profile):
@@ -111,7 +120,15 @@ class PySparkJobProfile(Profile):
         # Example {"table": "my_table", "duration": "100"}
         self.args = {}
         self.archives = []
-        self.logging = None
+        self.packages = []
+        # The runtime logging config of the job.
+        # Optional. The runtime log config for job execution.
+        self.logging = {
+            # The per-package log levels for the driver.
+            # This may include "root" package name to configure rootLogger.
+            # Examples:  'com.google = 4', 'root = 4', 'org.apache = 1'
+            "driver_log_levels": {},
+        }
         self.max_failures = 0
         self.use_cloud_engine_credentials = use_cloud_engine_credentials
 
