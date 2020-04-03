@@ -9,6 +9,8 @@
 # Project:     ML Platform
 # Description: DSL to configure and execute ML/DS pipelines
 
+import json
+
 
 class Profile(object):
     _profiles = {}
@@ -42,6 +44,12 @@ class Profile(object):
                                   job_async=False)
                 Profile._profiles[name] = profile
         return profile
+
+    @staticmethod
+    def load_from_file(file_path):
+        with open(file_path, 'r') as fp:
+            field = json.load(fp)
+        return field
 
 
 class AIProfile(Profile):
@@ -111,6 +119,7 @@ class PySparkJobProfile(Profile):
         # Example {"table": "my_table", "duration": "100"}
         self.args = {}
         self.archives = []
+        self.packages = []
         # The runtime logging config of the job.
         # Optional. The runtime log config for job execution.
         self.logging = {
