@@ -373,8 +373,7 @@ class ExecMagic(Magics):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
         parser.add_argument('--model', '-n', type=str, help='Name of model', nargs='+',
                             action=JoinAction)
-        parser.add_argument('--platform', '-pm', type=Platform,
-                            help='Working platform')
+        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
         parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='AIDemoProfile', nargs='+',
                             action=JoinAction)
         parser.add_argument('--package_src', '-s', type=str, help='Package src directory', default='./', nargs='+',
@@ -388,13 +387,7 @@ class ExecMagic(Magics):
         cred = prf.use_cloud_engine_credentials
 
         if args[0].platform == Platform.GCP:
-            #path_of_model = f'gs://{prf.bucket}/{args[0].model}'
             path_of_model = prf.path_to_saved_model
-            #if prf.path_to_saved_model != '':
-            #    if not prf.path_to_saved_model.startswith("gs://"):
-            #        GCPHelper.copy_folder_on_storage(prf.bucket, prf.path_to_saved_model, path_of_model,
-            #                                 use_cloud_engine_credentials=cred)
-            #        print("Saved model to {}".format(path_of_model))
             args_dct = prf.arguments
             args_dct['pythonVersion'] = prf.python_version
             args_dct['runtimeVersion'] = prf.runtime_version
