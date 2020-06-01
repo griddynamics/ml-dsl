@@ -20,5 +20,5 @@ setuptools.setup(
     author_email='arodin@griddynamics.com',
     packages=["com.griddynamics.dsl.ml", "com.griddynamics.dsl.ml.settings", "com.griddynamics.dsl.ml.models",
               "com.griddynamics.dsl.ml.jobs", "com.griddynamics.dsl.ml.executors"],
-    install_requires=['pyspark', 'google-cloud-dataproc', 'google-cloud-logging', '']
+    install_requires=['pyspark', 'google-cloud-dataproc', 'google-cloud-logging', 'sagemaker', 'boto3']
 )
