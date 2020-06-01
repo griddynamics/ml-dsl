@@ -11,15 +11,16 @@
 
 import json
 import shutil
-
 from abc import ABC, abstractmethod
 from time import sleep
 from distutils.core import run_setup
-from googleapiclient import errors
 from datetime import datetime
+from functools import reduce
+from typing import List
+
 # noinspection PyUnresolvedReferences
 from google.cloud.dataproc_v1.gapic import enums
-from functools import reduce
+from googleapiclient import errors
 
 from com.griddynamics.dsl.ml.jobs.pyspark_job import PySparkJob
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJob
@@ -628,33 +629,40 @@ class EmrExecutor(Executor):
     def __init__(self, job: PySparkJob, session: CompositeSession):
         self.__job = job
         self.__session = session.get_job_session()
-        self.__client = self.__session._session.client('emr')
+        self.__client = self.__session.session.client('emr')
         self.job_status = {}
         self.__yarn_app = []
-        self.__cluster_uuid = None
+        self.__cluster_uuid = self.__session.cluster
         self.__source_emr = '/home/hadoop/{}/'.format(self.__job.job_id)
         self.__step_ids = []
         self.__job_description = None
 
     def __check_cluster(self, client):
         clusters = client.list_clusters()
-        run_clusters = [i for i in clusters['Clusters'] if
-                        i['Name'] == 'ai4ops' and i['Status']['State'] in ['RUNNING', 'WAITING']]
-        if len(run_clusters) == 0:
-            # self.__create_cluster()
-            # TODO: functions to start and terminate emr cluster
-            print('Please start EMR cluster before!')
+        run_clusters = [i for i in clusters['Clusters'] if i['Status']['State'] == 'RUNNING']
+        wait_clusters = [i for i in clusters['Clusters'] if i['Status']['State'] == 'WAITING']
+        if len(wait_clusters) == 0:
+            if len(run_clusters) == 0:
+                # TODO: functions to start and terminate emr cluster
+                print('Please start EMR cluster before!')
+            else:
+                self.__cluster_uuid = run_clusters[0]['Id']
         else:
-            self.__cluster_uuid = run_clusters[0]['Id']
+            self.__cluster_uuid = wait_clusters[0]['Id']
 
-    def __prepare_job_args(self, start_job_list):
-        start_job_list.append(self.__file_path_to_s3_path(self.__job.py_scripts[0].name))
+    def __prepare_job_args(self, start_job_list: List[str]):
+        if len(self.__job.py_scripts) > 0:
+            start_job_list.append(f"s3://{self.__session.bucket}/"
+                                  f"{self.__construct_path(self.__job.py_scripts[0].name)}")
+        else:
+            start_job_list.append(self.__job.job_file)
         start_job_list.extend(self.__job.args)
         return start_job_list
 
     def __prepare_job_options(self):
-        option_list = ["spark-submit", "--master", "yarn"]
+        option_list = ["spark-submit"]
         options_dct = {
+            '--conf': self.__job.properties,
             '--jars': self.__job.jars,
             '--py-files': self.__job.py_files,
             '--archives': self.__job.archives,
@@ -665,44 +673,54 @@ class EmrExecutor(Executor):
             if len(v) > 0:
                 if k == '--packages':
                     option_list.extend([k, ','.join([str(i) for i in v])])
-
+                elif k == '--conf':
+                    for key, value in v.items():
+                        if key == '--conf':
+                            for i in value:
+                                option_list.extend([key, i])
+                        else:
+                            option_list.extend([key, value])
                 else:
-                    option_list.extend([k, ','.join([self.__source_emr + Helper.get_file_name(i) for i in v])])
+                    files_list = [f"s3://{self.__session.bucket}/" \
+                                  f"{self.__construct_path(Helper.get_file_name(f))}" for f in v]
+                    option_list.extend([k, ','.join(files_list)])
+                    #[self.__source_emr + Helper.get_file_name(i) for i in v]
         return option_list
 
     @staticmethod
-    def define_job_flow_step(name, action_on_failure, hadoop_jar_step):
+    def define_job_flow_step(name: str, action_on_failure: str, hadoop_jar_step: dict):
         return {'Name': name, 'ActionOnFailure': action_on_failure, 'HadoopJarStep': hadoop_jar_step}
 
-    def define_copy_file_step(self, name):
+    def define_copy_file_step(self, name: str, action_on_failure: str):
         copy_emr_step = {
             'Jar': 'command-runner.jar',
-            'Args': ['aws', 's3', 'cp', self.__file_path_to_s3_path(name), f'{self.__source_emr}{name}']
+            'Args': ['aws', 's3', 'cp', self.__file_path_to_s3_path(name),
+                     f'{self.__source_emr}{Helper.get_file_name(name)}']
         }
-        return self.define_job_flow_step(f'Copy {name} to EMR source', 'CANCEL_AND_WAIT', copy_emr_step)
+        return self.define_job_flow_step(f'Copy {name} to EMR source', action_on_failure, copy_emr_step)
 
-    def submit_job(self, run_async):
+    def submit_job(self, run_async: bool = False, action_on_failure: str ='CANCEL_AND_WAIT'):
         files_list = [self.__job.py_scripts, self.__job.py_files,
-                      self.__job.files, self.__job.jars, self.__job.archives]
-        self.__check_cluster(self.__client)
+                      self.__job.files, self.__job.jars, self.__job.archives, [self.__job.job_file]]
+        if self.__cluster_uuid is None:
+            self.__check_cluster(self.__client)
         self.__upload_files_to_s3(files_list)
-        self.__job.properties['spark.yarn.maxAppAttempts'] = str(self.__job.max_failures)
         steps = []
-        for files in files_list:
-            for file in files:
-                if file.name is None:
-                    name = file
-                else:
-                    name = file.name
-                steps.append(self.define_copy_file_step(name))
+        #if self.__job.job_file is None:
+        #    for files in files_list:
+        #        for file in files:
+        #            if file.name is None:
+        #                name = file
+        #            else:
+        #                name = file.name
+        #            steps.append(self.define_copy_file_step(name))
+
 
         py_spark_job_step = {
             'Jar': 'command-runner.jar',
-            'Args': self.__prepare_job_args(self.__prepare_job_options()),
-            'Properties': [{"Key": k, "Value": v} for k, v in self.__job.properties.items()]
+            'Args': self.__prepare_job_args(self.__prepare_job_options())
         }
-        steps.append(self.define_job_flow_step(f'PySparkJob{self.__job.job_id}',
-                                               'CANCEL_AND_WAIT', py_spark_job_step))
+        steps.append(self.define_job_flow_step(f'{self.__job.job_id}', action_on_failure, py_spark_job_step))
 
         print(f"Submitting {self.__job.job_id} to cluster {self.__session.cluster}")
         response = self.__client.add_job_flow_steps(JobFlowId=self.__cluster_uuid, Steps=steps)
@@ -714,21 +732,19 @@ class EmrExecutor(Executor):
             while (state != 'RUNNING') and not step_done:
                 state, step, step_done = self._get_step_status(self.__step_ids[-1])
                 sleep(1)
-            self.delete_s3_folder_source()
+            self.__delete_s3_folder_source()
             return self.job_description()
         else:
             return self.__wait_for_job()
 
-    def __upload_files_to_s3(self, files):
-        if self.__job.job_file:
-            self.upload_file_to_s3_job_path(self.__job.job_file)
+    def __upload_files_to_s3(self, files: List[str]):
         for files in files[1:]:
             for file in files:
-                self.upload_file_to_s3_job_path(file)
+                self.__upload_file_to_s3_job_path(file)
         for script in self.__job.py_scripts:
-            self.upload_script_to_s3_job_path(script)
+            self.__upload_script_to_s3_job_path(script)
 
-    def _get_step_status(self, step_id):
+    def _get_step_status(self, step_id: str):
         step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
         state = step['Step']['Status']['State']
         failed = state in ['FAILED', 'CANCELLED']
@@ -774,38 +790,37 @@ class EmrExecutor(Executor):
                     sleep(1)
         except KeyboardInterrupt:
             self.cancel_job()
-        self.delete_s3_folder_source()
+        self.__delete_s3_folder_source()
         return self.job_description()
 
-    def upload_file_to_s3_job_path(self, file_path):
+    def __upload_file_to_s3_job_path(self, file_path):
         if file_path and not str(file_path).startswith("s3://"):
             file_name = Helper.get_file_name(file_path)
-            print(f"Copy {file_name} to S3://{self.__session.bucket}/emr/"
-                  f"{self.__cluster_uuid}/{self.__job.job_id}/{file_name}")
-            AWSHelper.upload_file_to_storage(self.__session.bucket, str(file_path),
-                                             f'emr/{self.__cluster_uuid}/{self.__job.job_id}/{file_name}')
+            AWSHelper.upload_file_to_storage(self.__session.bucket, str(file_path), self.__construct_path(file_name))
+            print(f"Uploaded {file_name} to s3://{self.__session.bucket}/{self.__construct_path(file_name)}")
 
-    def upload_script_to_s3_job_path(self, script):
-        print(f"Copy {script.name} to S3://{self.__session.bucket}/emr/"
-              f"{self.__cluster_uuid}/{self.__job.job_id}/{script.name}")
-        AWSHelper.upload_object_to_storage(script.script, self.__session.bucket,
-                                           f'emr/{self.__cluster_uuid}/{self.__job.job_id}/{script.name}')
+    def __upload_script_to_s3_job_path(self, script: PyScript):
+        print(self.__session.bucket)
+        AWSHelper.upload_object_to_storage(script.script, self.__session.bucket, self.__construct_path(script.name))
+        print(f"Uploaded {script.name} to s3://{self.__session.bucket}/{self.__construct_path(script.name)}")
 
-    def delete_s3_folder_source(self):
-        AWSHelper.delete_path_from_storage(self.__session.bucket, f'emr/{self.__cluster_uuid}/{self.__job.job_id}/')
+    def __construct_path(self, name):
+        return f'emr/{self.__cluster_uuid}/{self.__job.job_id}/{name}'
+
+    def __delete_s3_folder_source(self):
+        AWSHelper.delete_path_from_storage(self.__session.bucket, self.__construct_path(""))
 
     def __file_path_to_s3_path(self, path):
-        return path if str(path).startswith("s3://") else 's3://{}/emr/{}/{}/{}'.format(self.__session.bucket,
-                                                                                        self.__cluster_uuid,
-                                                                                        self.__job.job_id,
-                                                                                        Helper.get_file_name(str(path)))
+        name = Helper.get_file_name(str(path))
+        return path if str(path).startswith("s3://") else f's3://{self.__session.bucket}/{self.__construct_path(name)}'
 
     def download_output(self):
         return self.download_output_from_s3()
 
     ##TODO
-    def download_output_from_s3(self):
+    def download_output_from_s3(self, path_from: str, path_to: str):
         """Downloads the output file from s3 and."""
+        AWSHelper.download_folder_from_storage(self.__session.bucket, path_from, path_to)
         pass
 
     def __build_job_description(self):
@@ -816,7 +831,6 @@ class EmrExecutor(Executor):
                 "job_id": self.__job.job_id
             },
             'placement': {
-                'cluster_name': self.__session.cluster,
                 'cluster_id': self.__cluster_uuid,
                 'step_id': self.__step_ids[-1]
             },
@@ -846,3 +860,56 @@ class EmrExecutor(Executor):
         return self.__build_job_description()
 
 
+class SageMakerExecutor:
+    def __init__(self, session: CompositeSession, profile, mode: str, py_script_name: str, args: dict):
+        self.__session = session.get_ml_session()
+        self.__bucket = self.__session._session.default_bucket()
+        self.__role = self.__session._role
+        self.__container = profile.container
+        self.__instance_count = profile.instance_count
+        self.__instance_type = profile.instance_type
+        self.__framework_version = profile.framework_version
+        self.__py_version = profile.py_version
+        self.__model_data = profile.model_data
+        self.__endpoint_name = profile.endpoint_name
+        self.__arguments = args
+        if mode == 'predict':
+            self.executor = self.__container(self.__endpoint_name)
+
+        elif mode == 'deploy':
+            self.executor = self.__container(model_data=self.__model_data,
+                                             entry_point=py_script_name,
+                                             role=self.__role,
+                                             framework_version='1.4.0'
+                                             )
+        else:
+            self.executor = self.__container(entry_point=py_script_name,
+                                             role=self.__role,
+                                             framework_version=self.__framework_version,
+                                             train_instance_count=self.__instance_count,
+                                             train_instance_type=self.__instance_type,
+                                             debugger_hook_config=False,
+                                             )
+
+    def submit_train_job(self):
+        self.executor.fit(self.__arguments)
+        return {
+                'model_data': self.executor.model_data,
+                'output_path': self.executor.output_path,
+                'entry_point': self.executor.entry_point,
+                'instance_count': self.__instance_count,
+                'instance_type': self.__instance_type
+               }
+        
+    def submit_deploy_model_job(self):
+        predictor = self.executor.deploy(instance_type=self.__instance_type,
+                                         initial_instance_count=self.__instance_count,
+                                        endpoint_name=self.__endpoint_name)
+        return predictor, {'endpoint_name': self.executor.endpoint_name,
+                           'entry_point': self.executor.entry_point,
+                           'model_data': self.executor.model_data,
+                           'name': self.executor.name,
+                           }
+            
+    def submit_prediction_job(self, predictions):
+        return self.executor.predict(predictions)
