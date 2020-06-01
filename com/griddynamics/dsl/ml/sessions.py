@@ -11,6 +11,8 @@
 
 
 from abc import ABC, abstractmethod
+from pathlib import Path
+
 # noinspection PyUnresolvedReferences
 from google.cloud import dataproc_v1
 from google.auth import compute_engine
@@ -19,8 +21,8 @@ from google.cloud.dataproc_v1.gapic.transports import job_controller_grpc_transp
 from googleapiclient import discovery
 
 import boto3
+import sagemaker
 
-from pathlib import Path
 from com.griddynamics.dsl.ml.settings.description import Platform
 
 
@@ -39,24 +41,35 @@ class CompositeSession:
     def get_ml_session(self):
         return self.__ml_session
 
-    def __build(self, job_bucket, job_region, cluster, job_project_id, platform,
-                job_path='jobs-root', ml_region=None, ml_project_id=None, ml_bucket=None,
-                use_cloud_engine_credentials=False):
+    def __build(self, job_bucket, job_region, cluster, job_project_id, platform, job_path='jobs-root',
+                ml_region=None, ml_project_id=None, ml_bucket=None, use_cloud_engine_credentials=False):
         self.__job_session = Session(job_bucket,
                                      job_region,
                                      cluster,
                                      job_project_id,
                                      platform,
                                      job_path,
-                                     use_cloud_engine_credentials = use_cloud_engine_credentials)
-        if ml_project_id is None:
-            ml_project_id = job_project_id
-        if ml_region is None:
-            ml_region = job_region
-        if ml_bucket is None:
-            ml_bucket = job_bucket
-        self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, platform, None,
-                                    use_cloud_engine_credentials=use_cloud_engine_credentials)
+                                     use_cloud_engine_credentials=use_cloud_engine_credentials,
+                                     job_session=True)
+        if platform == 'GCP':
+            if ml_project_id is None:
+                ml_project_id = job_project_id
+            if ml_region is None:
+                ml_region = job_region
+            if ml_bucket is None:
+                ml_bucket = job_bucket
+            self.__ml_session = Session(ml_bucket, ml_region, None, ml_project_id, platform, None,
+                                    use_cloud_engine_credentials=use_cloud_engine_credentials, job_session=False)
+        else:
+            if ml_region is None:
+                self.__ml_session = None
+            else:
+                if ml_bucket is None:
+                    ml_bucket = job_bucket
+                if ml_project_id is None:
+                    ml_project_id = job_project_id
+                self.__ml_session = Session(ml_bucket, None, None, ml_project_id, platform, None,
+                                        use_cloud_engine_credentials=use_cloud_engine_credentials, job_session=True)
 
     def __init__(self, job_bucket, job_region, cluster, job_project_id, job_path, ml_region,
                  ml_project_id, ml_bucket, platform, use_cloud_engine_credentials=False):
@@ -69,7 +82,7 @@ class CompositeSession:
 class Session:
     """Session of current run"""
     def __init__(self, bucket, zone, cluster, project_id, platform, job_path='jobs-root',
-                 use_cloud_engine_credentials=False):
+                 use_cloud_engine_credentials=False, job_session=True):
         self.__bucket = bucket
         self.__jobs_path = job_path
         self.__zone = zone
@@ -100,7 +113,11 @@ class Session:
                             credentials=credentials))
                     self._dataproc_job_client = dataproc_v1.JobControllerClient(job_transport)
         else:
-            self._session = boto3.Session()
+            if job_session:
+                self.session = boto3.Session()
+            else:
+                self._session = sagemaker.Session()
+                self._role = sagemaker.get_execution_role()
 
     @staticmethod
     def get_region_from_zone(zone):

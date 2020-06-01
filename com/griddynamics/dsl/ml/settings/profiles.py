@@ -12,103 +12,47 @@
 import json
 
 
-class Profile(object):
+class BaseProfile(object):
     _profiles = {}
 
-    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async):
-        self.root_path = root_path
+    def __init__(self, bucket, cluster, region, job_prefix):
         self.bucket = bucket
-        self.project = project
         self.cluster = cluster
         self.region = region
-        self.ai_region = ai_region
         self.job_prefix = job_prefix
-        self.job_async = job_async
 
     @staticmethod
     def set(name, profile):
-        Profile._profiles[name] = profile
+        BaseProfile._profiles[name] = profile
 
     @staticmethod
     def get(name):
-        profile = Profile._profiles.get(name, None)
-        if profile is None:
-            if name == 'DemoProfile':
-                profile = Profile(root_path='/home/jovyan/work/data/demo/scripts',
-                                  bucket='ai4ops',
-                                  project='gd-gcp-techlead-experiments',
-                                  cluster='ai4ops',
-                                  region='global',
-                                  ai_region='us-central1',
-                                  job_prefix='demo_job',
-                                  job_async=False)
-                Profile._profiles[name] = profile
+        profile = BaseProfile._profiles.get(name, None)
         return profile
 
     @staticmethod
-    def load_from_file(file_path):
+    def load_profile_data(file_path):
         with open(file_path, 'r') as fp:
             field = json.load(fp)
         return field
 
 
-class AIProfile(Profile):
-    _profiles = {}
+class Profile(BaseProfile):
 
-    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async,
-                 package_dst, scale_tier, package_name, runtime_version):
-        super(AIProfile, self).__init__(root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async)
-        self.package_name = package_name
-        self.package_dst = package_dst
-        self.scale_tier = scale_tier
-        self.runtime_version = runtime_version
-
-    @staticmethod
-    def get(name):
-        profile = Profile._profiles.get(name, None)
-        if profile is None:
-            if name == 'DemoAIProfile':
-                profile = AIProfile(root_path='/home/jovyan/work/data/demo/scripts',
-                                    bucket='ai4ops',
-                                    project='gd-gcp-techlead-experiments',
-                                    cluster='ai4ops',
-                                    region='global',
-                                    ai_region='us-central1',
-                                    job_prefix='ai_train_demo_job',
-                                    job_async=False,
-                                    package_name='trainer',
-                                    package_dst='mldsl/packages',
-                                    scale_tier='BASIC',
-                                    runtime_version='1.14')
-                AIProfile._profiles[name] = profile
-            if name == 'DemoDeployAIProfile':
-                profile = AIProfile(root_path='/home/jovyan/work/data/demo/deploy',
-                                    bucket='ai4ops',
-                                    project='gd-gcp-techlead-experiments',
-                                    cluster='ai4ops',
-                                    region='global',
-                                    ai_region='us-central1',
-                                    job_prefix='ai_train_demo_job',
-                                    job_async=False,
-                                    package_name='',
-                                    package_dst='staging',
-                                    scale_tier='BASIC',
-                                    runtime_version='1.14')
-                AIProfile._profiles[name] = profile
-        return profile
-
-    @staticmethod
-    def set(name, profile):
-        Profile._profiles[name] = profile
+    def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async):
+        super(Profile, self).__init__(bucket, cluster, region, job_prefix)
+        self.root_path = root_path
+        self.project = project
+        self.ai_region = ai_region
+        self.job_async = job_async
 
 
 class PySparkJobProfile(Profile):
-    _profiles = {}
 
-    def __init__(self, root_path, bucket, project, cluster, region, ai_region, job_prefix, job_async,
+    def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async,
                  use_cloud_engine_credentials=False):
-        super(PySparkJobProfile, self).__init__(root_path, bucket, project, cluster, region, ai_region, job_prefix,
-                                                job_async)
+        super(PySparkJobProfile, self).__init__(bucket, cluster, region, job_prefix, root_path,
+                                                project, ai_region, job_async)
         # List of files associated with the job
         self.py_files = []
         self.files = []
@@ -132,13 +76,59 @@ class PySparkJobProfile(Profile):
         self.max_failures = 0
         self.use_cloud_engine_credentials = use_cloud_engine_credentials
 
-    @staticmethod
-    def get(name):
-        profile = Profile._profiles.get(name, None)
-        if profile is None:
-            raise ValueError("There is no specified profile")
-        return profile
 
-    @staticmethod
-    def set(name, profile):
-        Profile._profiles[name] = profile
+class AIProfile(Profile):
+
+    def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async,
+                 package_dst, scale_tier, package_name, runtime_version, python_version,
+                 use_cloud_engine_credentials=False, arguments={}):
+        super(AIProfile, self).__init__(bucket, cluster, region, job_prefix,
+                                        root_path, project, ai_region, job_async)
+
+        self.package_name = package_name
+        self.package_dst = package_dst
+        self.scale_tier = scale_tier
+        self.runtime_version = runtime_version
+        self.python_version  = python_version
+        self.use_cloud_engine_credentials = use_cloud_engine_credentials
+        self.arguments = arguments
+
+
+class DeployAIProfile(AIProfile):
+
+    def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async,
+                 package_dst, scale_tier, package_name, runtime_version, python_version,
+                 use_cloud_engine_credentials=False, arguments={},
+                 model_name='model', version_name='v1', is_new_model='True',
+                 artifacts=[], custom_code=None, path_to_saved_model='./'):
+        super(DeployAIProfile, self).__init__(bucket, cluster, region, job_prefix,
+                                              root_path, project, ai_region, job_async,
+                                              package_dst, scale_tier, package_name,
+                                              runtime_version, python_version,
+                                              use_cloud_engine_credentials, arguments)
+        self.model = model_name
+        self.version_name = version_name
+        self.is_new_model = is_new_model
+        self.artifacts = artifacts
+        self.custom_code = custom_code
+        self.path_to_saved_model = path_to_saved_model
+
+
+class SageMakerProfile(BaseProfile):
+    _profiles = {}
+
+    def __init__(self, bucket, cluster, region, job_prefix, container,
+                 root_path=None, framework_version=None,
+                 instance_type="ml.t2.medium", instance_count=1,
+                 use_cloud_engine_credentials=False):
+        super(SageMakerProfile, self).__init__(bucket, cluster, region, job_prefix)
+        self.container = container
+        self.root_path = root_path
+        self.framework_version = framework_version
+        self.instance_type = instance_type
+        self.instance_count = instance_count
+        self.endpoint_name = None
+        self.model_data = None
+        self.py_version = None
+        self.use_cloud_engine_credentials = use_cloud_engine_credentials
+

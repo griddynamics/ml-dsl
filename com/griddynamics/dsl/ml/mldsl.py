@@ -13,6 +13,8 @@ import argparse
 import sys
 import re
 from runpy import run_path
+import numpy as np
+import io
 
 from IPython import get_ipython
 # noinspection PyUnresolvedReferences
@@ -23,21 +25,19 @@ from IPython.core.magic import magics_class, Magics, line_cell_magic, needs_loca
 from IPython.core.display import display, HTML, JSON, Image
 from pyspark import SparkContext
 
-from com.griddynamics.dsl.ml.settings.profiles import Profile, AIProfile
+from com.griddynamics.dsl.ml.settings.profiles import *
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJobBuilder
 from com.griddynamics.dsl.ml.jobs.builder import JobBuilder
 from com.griddynamics.dsl.ml.models.models import ModelBuilder
 from com.griddynamics.dsl.ml.settings.arguments import Arguments
 from com.griddynamics.dsl.ml.settings.artifacts import Artifact
 from com.griddynamics.dsl.ml.sessions import SessionFactory
-from com.griddynamics.dsl.ml.settings.description import Platform
 from com.griddynamics.dsl.ml.executors.executors import *
-
 from com.griddynamics.dsl.ml.helpers import *
 
+np.set_printoptions(precision=4, threshold=np.inf)
 _py_scripts = {}
 job_tracker = {}
-_variables = {}
 prefix = '-'
 DATAPROC_JOBS_URL = 'https://console.cloud.google.com/dataproc/jobs'
 STORAGE_BROWSER_URL = 'https://console.cloud.google.com/storage/browser'
@@ -184,10 +184,10 @@ class ExecMagic(Magics):
         args_dct = ExecMagic.convert(args[1])
         builder = JobBuilder(args[0].platform)
         session = SessionFactory(platform=args[0].platform)\
-            .build_session(job_bucket=prf.bucket,job_region=prf.region,
+            .build_session(job_bucket=prf.bucket, job_region=prf.region,
                            cluster=prf.cluster,
                            job_project_id=prf.project,
-                           ml_region=prf.ai_region,
+                           ml_region=None,
                            use_cloud_engine_credentials=prf.use_cloud_engine_credentials)
         job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
         output_path = '{}/{}'.format(args[0].output_path, job_name)
@@ -206,12 +206,14 @@ class ExecMagic(Magics):
     @line_magic
     def py_data(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
-        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
+        parser.add_argument('--platform', '-pm', type=Platform,
+                            help='Working platform')
         parser.add_argument('--name', '-n', type=str, help='Name of script file', default='default.py', nargs='+',
                             action=JoinAction)
         parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='DemoProfile', nargs='+',
                             action=JoinAction)
-        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
+        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate',
+                            default=0)
         parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
                             action=JoinAction)
         print("Parameters string = <<<{}>>>".format(py_path))
@@ -270,230 +272,252 @@ class ExecMagic(Magics):
     def py_train(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
-        parser.add_argument('--name', '-n', type=str, help='Train script module name', default='./', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--package_src', '-s', type=str, help='Package src directory', default='./', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='AIDemoProfile', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
-                            action=JoinAction)
+        parser.add_argument('--name', '-n', type=str, help='Train script module name',
+                            default='./', nargs='+', action=JoinAction)
+        parser.add_argument('--package_src', '-s', type=str, help='Package src directory',
+                            default='./', nargs='+', action=JoinAction)
+        parser.add_argument('--profile', '-p', type=str, help='Name of profile',
+                            default='AIDemoProfile', nargs='+', action=JoinAction)
+        parser.add_argument('--output_path', '-o', type=str, help='Output GCS path',
+                            default='', nargs='+', action=JoinAction)
         args = parser.parse_known_args(py_path.split())
         script_name = args[0].name
         prf_name = args[0].profile
         package_src = args[0].package_src
-        prf = AIProfile.get(prf_name)
+        prf = Profile.get(prf_name)
         if prf is None:
             raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
 
         args_dct = ExecMagic.convert(args[1])
-
-        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket, job_region=prf.region,
+        cred = prf.use_cloud_engine_credentials
+        project = prf.project if hasattr(prf, "project") else prf.job_prefix
+        ai_region = prf.ai_region if hasattr(prf, "ai_region") else prf.region
+        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket,
+                                                                          job_region=prf.region,
                                                                           cluster=prf.cluster,
-                                                                          job_project_id=prf.project,
-                                                                          ml_region=prf.ai_region)
+                                                                          job_project_id=project,
+                                                                          ml_region=ai_region,
+                                                                          use_cloud_engine_credentials=cred)
         job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
-        output_path = '{}/{}'.format(args[0].output_path, job_name)
-        args_dct['--output_path'] = output_path
+        if args[0].platform == Platform.GCP:
+            output_path = '{}/{}'.format(args[0].output_path, job_name)
 
-        arguments = Arguments()
-        arguments.set_args(**args_dct)
+            args_dct = {**prf.arguments, **args_dct}
+            args_dct['--output_path'] = output_path
 
-        training_input = {
-            "region": prf.ai_region,
-            "scaleTier": prf.scale_tier,
-            "jobDir": output_path,
-            "pythonModule": '{}.{}'.format(prf.package_name, script_name.split('.py')[0]),
-            "runtimeVersion": prf.runtime_version
-        }
-        m_builder = ModelBuilder()
-        model = m_builder.name(job_name).train_arguments(arguments).build()
-        ai_job_builder = AIJobBuilder()
-        ai_job = (ai_job_builder.model(model)
-                  .package_src(package_src)
-                  .package_dst('{}/{}'.format(prf.package_dst, job_name))
-                  .train_input(training_input)
-                  .name(job_name)
-                  .job_dir(output_path)
-                  .build())
+            arguments = Arguments()
+            arguments.set_args(**args_dct)
+            training_input = {
+                "region": prf.ai_region,
+                "scaleTier": prf.scale_tier,
+                "jobDir": output_path,
+                "pythonModule": '{}.{}'.format(prf.package_name, script_name.split('.py')[0]),
+                "runtimeVersion": prf.runtime_version,
+                "pythonVersion": prf.python_version
+            }
+            m_builder = ModelBuilder()
+            model = m_builder.name(job_name).train_arguments(arguments).build()
+            ai_job_builder = AIJobBuilder()
+            ai_job = (ai_job_builder.model(model)
+                      .package_src(package_src)
+                      .package_dst('{}/{}'.format(prf.package_dst, job_name))
+                      .train_input(training_input)
+                      .name(job_name)
+                      .job_dir(output_path)
+                      .build())
 
-        # noinspection PyTypeChecker
-        display(HTML('<a href="{url}/{job_name}/charts/cpu?project={project}">{job_name}</a>'.format(
-            url=AI_JOBS_URL,
-            job_name=job_name,
-            project=prf.project)))
-
-        executor = AIPlatformJobExecutor(session, ai_job, 10, 1000)
-        response = executor.submit_train_job()
-        job_tracker[job_name] = executor
-
-        # noinspection PyTypeChecker
-        display(HTML('<a href="{url}/{output_path}?project={project}">Output Data {job_name}</a>'.format(
-            url=STORAGE_BROWSER_URL,
-            output_path=output_path.split('gs://')[1],
-            job_name=job_name,
-            project=prf.project)))
-        # noinspection PyTypeChecker
-        display(JSON(response))
-        metrics_png = self.download_from_gs(prf.bucket, prf.project, output_path, job_name)
-        if os.path.exists(metrics_png):
             # noinspection PyTypeChecker
-            display(Image(filename=metrics_png))
+            display(HTML('<a href="{url}/{job_name}/charts/cpu?project={project}">{job_name}</a>'.format(
+                url=AI_JOBS_URL,
+                job_name=job_name,
+                project=prf.project)))
+
+            executor = AIPlatformJobExecutor(session, ai_job, 10, 1000)
+        else:
+            for k in args_dct.copy():
+                args_dct[re.sub("--", '', k)] = args_dct[k]
+                args_dct.pop(k)
+            executor = SageMakerExecutor(session, prf, mode='train', 
+                                         py_script_name=os.path.join(package_src, script_name),
+                                         args=args_dct)
+
+        response = executor.submit_train_job()
+        
+        if args[0].platform == Platform.GCP:
+            job_tracker[job_name] = executor
+            # noinspection PyTypeChecker
+            display(HTML('<a href="{url}/{output_path}?project={project}">Output Data {job_name}</a>'.format(
+                url=STORAGE_BROWSER_URL,
+                output_path=output_path.split('gs://')[1],
+                job_name=job_name,
+                project=prf.project)))
+            # noinspection PyTypeChecker
+            metrics_png = self.download_from_gs(prf.bucket, prf.project, output_path, job_name)
+            if os.path.exists(metrics_png):
+                # noinspection PyTypeChecker
+                display(Image(filename=metrics_png))
+        else:
+            job_tracker[job_name] = executor.executor
+            display(HTML('<a href="{url}">{job_name}</a>'.format(url=response['model_data'],
+                                                                             job_name=response['model_data'])))
+        display(JSON(response))
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
             "#job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
         ]
         get_ipython().set_next_input('\n'.join(job_reference))
+            
 
     @line_magic
     def py_deploy(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
-        parser.add_argument('--model', '-n', type=str, help='Name of model', nargs='+', action=JoinAction)
-        parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
+        parser.add_argument('--model', '-n', type=str, help='Name of model', nargs='+',
+                            action=JoinAction)
+        parser.add_argument('--platform', '-pm', type=Platform,
+                            help='Working platform')
         parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='AIDemoProfile', nargs='+',
                             action=JoinAction)
         parser.add_argument('--package_src', '-s', type=str, help='Package src directory', default='./', nargs='+',
                             action=JoinAction)
-        parser.add_argument('--version_name', '-v', type=str, help='Version of model', default='v1', nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--is_new_model', '-i', help='Is new deployment model', action='store_true', default=False)
-        parser.add_argument('--artifacts', '-a', help='Artifacts of model', nargs='+', default=[])
-        parser.add_argument('--custom_code', '-c', help='Additional code for your model', type=str, default=None,
-                            nargs='+', action=JoinAction)
-        parser.add_argument('--path_to_saved_model', '-m', help='Path to trained model', default='')
-        parser.add_argument('--use_cloud_engine_credentials',
-                            help='Use cloud engine credentials',
-                            type=bool, default=False)
 
         args = parser.parse_known_args(py_path.split())
         prf_name = args[0].profile
-        use_cloud_engine_credentials = args[0].use_cloud_engine_credentials
-        prf = AIProfile.get(prf_name)
+        prf = Profile.get(prf_name)
         if prf is None:
             raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
+        cred = prf.use_cloud_engine_credentials
 
-        path_of_model = f'gs://{prf.bucket}/{args[0].model}'
+        if args[0].platform == Platform.GCP:
+            path_of_model = f'gs://{prf.bucket}/{args[0].model}'
+            if prf.path_to_saved_model != '':
+                GCPHelper.copy_folder_on_storage(prf.bucket, prf.path_to_saved_model, path_of_model,
+                                             use_cloud_engine_credentials=cred)
+                print("Saved model to {}".format(path_of_model))
+            args_dct = prf.arguments
+            args_dct['pythonVersion'] = prf.python_version
+            args_dct['runtimeVersion'] = prf.runtime_name
+            args_dct['deploymentUri'] = f"{path_of_model}"
 
-        if args[0].path_to_saved_model != '':
-            GCPHelper.copy_folder_on_storage(prf.bucket, args[0].path_to_saved_model, path_of_model,
-                                             use_cloud_engine_credentials=use_cloud_engine_credentials)
-            print("Saved model to {}".format(path_of_model))
-        args_dct = ExecMagic.convert(args[1])
-        for key in args_dct.keys():
-            args_dct[re.sub('--', '', key)] = args_dct.pop(key)
+            deployment_artifacts = []
+            for a in prf.artifacts:
+                if a.startswith("gs://"):
+                    deployment_artifact = Artifact(file_name=a, path=path_of_model)
+                else:
+                    fname = os.path.basename(a)
+                    deployment_artifact = Artifact(file_name=fname, path=path_of_model)
+                deployment_artifacts.append(deployment_artifact)
 
-        args_dct['runtimeVersion'] = prf.runtime_version
-        args_dct['deploymentUri'] = f"{path_of_model}"
+            m_builder = ModelBuilder()
+            m_builder = m_builder.name(args[0].model).files_root(prf.root_path)
+            if prf.custom_code is not None:
+                m_builder = m_builder.custom_predictor_path(prf.custom_code)
 
-        deployment_artifacts = []
-        for a in args[0].artifacts:
-            if a.startswith("gs://"):
-                deployment_artifact = Artifact(file_name=a, path=path_of_model)
-            else:
-                fname = os.path.basename(a)
-                deployment_artifact = Artifact(file_name=fname, path=path_of_model)
-            deployment_artifacts.append(deployment_artifact)
-        m_builder = ModelBuilder()
-        m_builder = m_builder.name(args[0].model).files_root(prf.root_path)
-        if args[0].custom_code is not None:
-            m_builder = m_builder.custom_predictor_path(args[0].custom_code)
+            model = (m_builder.artifacts(deployment_artifacts)
+                     .is_tuning(False)
+                     .build())
 
-        model = (m_builder.artifacts(deployment_artifacts)
-                 .is_tuning(False)
-                 .build())
+            ai_job_builder = AIJobBuilder()
+            ai_job_builder = ai_job_builder.model(model).package_dst(prf.package_dst)
+            if args[0].package_src is not None:
+                ai_job_builder = ai_job_builder.package_src(args[0].package_src)
+            ai_job = ai_job_builder.deploy_input(args_dct).build()
 
-        ai_job_builder = AIJobBuilder()
-        ai_job_builder = ai_job_builder.model(model).package_dst(prf.package_dst)
-        if args[0].package_src is not None:
-            ai_job_builder = ai_job_builder.package_src(args[0].package_src)
-        ai_job = ai_job_builder.deploy_input(args_dct).build()
-
-        job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
-        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket, job_region=prf.region,
+        job_name = '{}_{}_predictor'.format(prf.job_prefix, int(datetime.now().timestamp()))
+        project = prf.project if hasattr(prf, "project") else prf.job_prefix
+        ai_region = prf.ai_region if hasattr(prf, "ai_region") else prf.region
+        session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket,
+                                                                          job_region=prf.region,
                                                                           cluster=prf.cluster,
-                                                                          job_project_id=prf.project,
-                                                                          ml_region=prf.ai_region)
-
-        executor = AIPlatformJobExecutor(session, ai_job, wait_delay=10, wait_tries=1000)
-        if args[0].is_new_model:
-            response = executor.submit_deploy_model_job(args[0].version_name, create_new_model=True)
+                                                                          job_project_id=project,
+                                                                          ml_region=ai_region,
+                                                                          use_cloud_engine_credentials=cred)
+        if args[0].platform == Platform.GCP:
+            executor = AIPlatformJobExecutor(session, ai_job, wait_delay=10, wait_tries=1000)
+            if prf.is_new_model:
+                response = executor.submit_deploy_model_job(prf.version_name, create_new_model=True)
+            else:
+                response = executor.submit_deploy_model_job(prf.version_name)
+            job_tracker[job_name] = executor
+            # noinspection PyTypeChecker
+            display(HTML('<a href="{url}/{path_of_model}?project={project}">Deploy model path {job_name}</a>'.format(
+                url=STORAGE_BROWSER_URL,
+                path_of_model=path_of_model.split('gs://')[1],
+                job_name=job_name,
+                project=prf.project)))
         else:
-            response = executor.submit_deploy_model_job(args[0].version_name)
-        job_tracker[job_name] = executor
-
-        # noinspection PyTypeChecker
-        display(HTML('<a href="{url}/{path_of_model}?project={project}">Deploy model path {job_name}</a>'.format(
-            url=STORAGE_BROWSER_URL,
-            path_of_model=path_of_model.split('gs://')[1],
-            job_name=job_name,
-            project=prf.project)))
-
+            script_name = args[0].model
+            package_src = args[0].package_src
+            #TODO: args={}
+            executor = SageMakerExecutor(session, prf, mode='deploy', 
+                                         py_script_name=os.path.join(package_src, script_name), args={})
+            predictor, response = executor.submit_deploy_model_job()
+            job_tracker[job_name] = predictor
         # noinspection PyTypeChecker
         display(JSON(response))
         job_reference = [
             '#Use job_{job_name} instance to browse job properties.'.format(job_name=job_name),
-            "#job_{job_name} = job_tracker['{job_name}']".format(job_name=job_name)
+            "#job_tracker['{job_name}']".format(job_name=job_name)
         ]
         get_ipython().set_next_input('\n'.join(job_reference))
 
-    @line_cell_magic
-    def py_instance(self, line):
-        _variables["instance"] = line
 
     @line_magic
     def py_test(self, py_path):
         parser = argparse.ArgumentParser(prefix_chars=prefix)
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
-        parser.add_argument('--model', '-n', type=str, help='Name of model version', nargs='+', action=JoinAction)
-        parser.add_argument('--version', '-v', type=str, help='Version of model', default=None, nargs='+',
-                            action=JoinAction)
-        parser.add_argument('--profile', '-p', type=str, help='Name of profile',
-                            default='AIDeployDemoProfile', nargs='+', action=JoinAction)
+        parser.add_argument('--profile', '-p', type=str, default='AIDeployDemoProfile',
+                            nargs='+', action=JoinAction, help='Name of profile')
         parser.add_argument('--test', '-t', nargs='+', help='Test instances', default=[])
         args = parser.parse_known_args(py_path.split())
         prf_name = args[0].profile
         prf = AIProfile.get(prf_name)
-        predictions = {
-            "instances": json.loads(" ".join(args[0].test))
-        }
 
-        if args[0].version:
-            v_name = f'projects/{prf.project}/models/{args[0].model}/versions/{args[0].version}'
-        else:
-            v_name = f'projects/{prf.project}/models/{args[0].model}'
-        predictions["name"] = v_name
-
-        m_builder = ModelBuilder()
-        model = (m_builder
-                 .name(args[0].model)
-                 .is_tuning(False)
-                 .build())
-
-        job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
-        ai_job_builder = AIJobBuilder()
-        ai_job = (ai_job_builder
-                  .model(model)
-                  .name(job_name)
-                  .build())
+        cred = prf.use_cloud_engine_credentials
 
         session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket,
                                                                           job_region=prf.region,
                                                                           cluster=prf.cluster,
                                                                           job_project_id=prf.project,
-                                                                          ml_region=prf.ai_region)
+                                                                          ml_region=prf.ai_region,
+                                                                          use_cloud_engine_credentials=cred)
 
-        executor = AIPlatformJobExecutor(session, ai_job, wait_delay=10, wait_tries=1000)
+        if args[0].platform == Platform.GCP:
+            predictions = {
+                "instances": json.loads(" ".join(args[0].test))
+            }
+            if prf.version:
+                v_name = f'projects/{prf.project}/models/{prf.model}/versions/{prf.version}'
+            else:
+                v_name = f'projects/{prf.project}/models/{prf.model}'
+            predictions["name"] = v_name
 
-        response = executor.submit_predictions_job(predictions)
-        predictions = {}
-        for preds in response:
-            for key in preds.keys():
-                if key in predictions.keys():
-                    predictions[key].append(preds[key])
-                else:
-                    predictions[key] = [preds[key]]
-        for k in predictions.keys():
-            get_ipython().set_next_input('\n'.join((k, str(predictions[k]))))
+            m_builder = ModelBuilder()
+            model = (m_builder
+                     .name(prf.model)
+                     .is_tuning(False)
+                     .build())
+            job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
+            ai_job_builder = AIJobBuilder()
+            ai_job = (ai_job_builder
+                      .model(model)
+                      .name(job_name)
+                      .build())
+            executor = AIPlatformJobExecutor(session, ai_job, wait_delay=10, wait_tries=1000)
+        else:
+            executor = SageMakerExecutor(session, prf, mode='predict', py_script_name = None, args={})
+        response = executor.submit_prediction_job(predictions)
+        if args[0].platform == Platform.GCP:
+            predictions = {}
+            for preds in response:
+                for key in preds.keys():
+                    if key in predictions.keys():
+                        predictions[key].append(preds[key])
+                    else:
+                        predictions[key] = [preds[key]]
+            for k in predictions.keys():
+                get_ipython().set_next_input('\n'.join((k, str(predictions[k]))))
+        else:
+            get_ipython().set_next_input(np.array_repr(response).replace('\n', ''))
 
     @line_magic
     def logging(self, py_path):
@@ -502,8 +526,8 @@ class ExecMagic(Magics):
         parser.add_argument('--filter', '-f', nargs='+', help='Project IDs to include', default=None)
         parser.add_argument('--order_by', '-r', type=str, help='One of ASC, DESC or None',
                             choices=[None, "ASC", "DESC"], default=None)
-        parser.add_argument('--page_size', '-s', type=int, help='The maximum number of entries in each page of results',
-                            default=None)
+        parser.add_argument('--page_size', '-s', type=int,
+                            help='The maximum number of entries in each page of results', default=None)
         args = parser.parse_known_args(py_path.split())
         FILTER = " ".join(args[0].filter)
         if args[0].order_by == "ASC":
@@ -529,9 +553,8 @@ class ExecMagic(Magics):
                             action=JoinAction)
         parser.add_argument('--validator', '-v', help='name of class Validator', type=str, nargs='+',
                             action=JoinAction)
-        parser.add_argument('--validator_path', '-vp', help='path of file with class Validator', type=str, nargs='+',
+        parser.add_argument('--validator_path', '-vp', help='path to file with class Validator', type=str, nargs='+',
                             action=JoinAction)
-        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate', default=0)
         parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
                             action=JoinAction)
         print("Parameters string = <<<{}>>>".format(py_path))
@@ -554,7 +577,8 @@ class ExecMagic(Magics):
         validator_module = run_path(args[0].validator_path)
 
         executor = JobUpgradeExecutor(job, session, args[0].old_job_id)
-        res = executor.submit_upgrade_job(validator=args[0].validator, validator_path=validator_module,
+        res = executor.submit_upgrade_job(validator=args[0].validator,
+                                          validator_path=validator_module,
                                           run_async=prf.job_async)
         job_tracker[job_name] = res
         # noinspection PyTypeChecker
