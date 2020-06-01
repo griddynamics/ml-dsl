@@ -388,14 +388,16 @@ class ExecMagic(Magics):
         cred = prf.use_cloud_engine_credentials
 
         if args[0].platform == Platform.GCP:
-            path_of_model = f'gs://{prf.bucket}/{args[0].model}'
-            if prf.path_to_saved_model != '':
-                GCPHelper.copy_folder_on_storage(prf.bucket, prf.path_to_saved_model, path_of_model,
-                                             use_cloud_engine_credentials=cred)
-                print("Saved model to {}".format(path_of_model))
+            #path_of_model = f'gs://{prf.bucket}/{args[0].model}'
+            path_of_model = prf.path_to_saved_model
+            #if prf.path_to_saved_model != '':
+            #    if not prf.path_to_saved_model.startswith("gs://"):
+            #        GCPHelper.copy_folder_on_storage(prf.bucket, prf.path_to_saved_model, path_of_model,
+            #                                 use_cloud_engine_credentials=cred)
+            #        print("Saved model to {}".format(path_of_model))
             args_dct = prf.arguments
             args_dct['pythonVersion'] = prf.python_version
-            args_dct['runtimeVersion'] = prf.runtime_name
+            args_dct['runtimeVersion'] = prf.runtime_version
             args_dct['deploymentUri'] = f"{path_of_model}"
 
             deployment_artifacts = []
@@ -485,8 +487,8 @@ class ExecMagic(Magics):
             predictions = {
                 "instances": json.loads(" ".join(args[0].test))
             }
-            if prf.version:
-                v_name = f'projects/{prf.project}/models/{prf.model}/versions/{prf.version}'
+            if prf.version_name:
+                v_name = f'projects/{prf.project}/models/{prf.model}/versions/{prf.version_name}'
             else:
                 v_name = f'projects/{prf.project}/models/{prf.model}'
             predictions["name"] = v_name
