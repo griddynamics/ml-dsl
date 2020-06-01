@@ -11,10 +11,7 @@ with warnings.catch_warnings():
     from tensorflow.keras.callbacks import Callback
     from tensorflow.keras.optimizers import Adam
     import tensorflow as tf
-
-    #from tensorflow.core.protobuf import rewriter_config_pb2
-    #from tensorflow.keras.backend import set_session
-    #tf.keras.backend.clear_session()  # For easy reset of notebook state.
+    import os
 
     from uuid import uuid4
     import argparse
@@ -24,7 +21,6 @@ with warnings.catch_warnings():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
-tf.get_logger().setLevel('INFO')
 class MetricCallback(Callback):
     def on_train_begin(self,logs={}):
         self.losses = []
@@ -62,23 +58,20 @@ def read_csv(path):
     return pd.concat(pdf, axis=0, ignore_index=True).reset_index()
 
 
-def pretrained_embed_layer(word_to_vec_map, word_to_index):
-    vocab_len = len(word_to_index) + 1
-    emb_dim = word_to_vec_map["cucumber"].shape[0]
-    emb_matrix = np.zeros((vocab_len, emb_dim))
+def pretrained_embed_layer(word_to_vec_map, word_to_index, emb_dim):
+    emb_matrix = np.zeros((len(word_to_index)+1, emb_dim))
     for word, idx in word_to_index.items():
         emb_matrix[idx, :] = word_to_vec_map[word]
-    embedding_layer = Embedding(input_dim=vocab_len, trainable=False, 
-                                output_dim=emb_dim)
-    embedding_layer.build((None,))
-    embedding_layer.set_weights([emb_matrix])
-    return embedding_layer
+    
+    return emb_matrix
 
 
-def define_model(input_shape, word_to_vec_map, word_to_index, rnn_units, dropout=0.5):
+def define_model(input_shape, emb_matrix, vocab_len, emb_dim, rnn_units, dropout=0.5):
     sentence_indices = Input(input_shape, dtype="int32")
     # Create the embedding layer pretrained with GloVe Vectors
-    embedding_layer = pretrained_embed_layer(word_to_vec_map, word_to_index)
+    embedding_layer = Embedding(input_dim=vocab_len, trainable=False, output_dim=emb_dim)
+    embedding_layer.build((None,))
+    embedding_layer.set_weights([emb_matrix])
     # Propagate sentence_indices through your embedding layer
     embeddings = embedding_layer(sentence_indices)
     X = LSTM(units=rnn_units, return_sequences=False)(embeddings)
@@ -138,37 +131,33 @@ if __name__ == '__main__':
     NUM_EPOCS = args.epochs
     RNN_STATE_DIM = 32
     LEARNING_RATE = 0.01
+    vocab_len = len(word_to_index) + 1
+    emb_dim = word_to_vec_map["cucumber"].shape[0]
+    emb_matrix = pretrained_embed_layer(word_to_vec_map, word_to_index, emb_dim)
 
-    #config_proto = tf.ConfigProto()
-    #off = rewriter_config_pb2.RewriterConfig.OFF
-    #config_proto.graph_options.rewrite_options.arithmetic_optimization = off
-    #session = tf.Session(config=config_proto)
-    #set_session(session)
-
-    model = define_model((N, ), word_to_vec_map, word_to_index, RNN_STATE_DIM)
+    model = define_model((N, ), emb_matrix, vocab_len, emb_dim, RNN_STATE_DIM)
     print(model.summary())
-    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=LEARNING_RATE), 
-                  metrics=['accuracy'])
+    model.compile(loss='binary_crossentropy', optimizer=Adam(lr=LEARNING_RATE), metrics=['accuracy'])
     # fit model
     metrics = MetricCallback()
-    model.fit(train_x, train_y, 
-                  batch_size=1024, epochs=NUM_EPOCS, 
-                  callbacks=[metrics], shuffle=True)
+    a = model.fit(train_x, train_y, batch_size=1024, epochs=NUM_EPOCS, callbacks=[metrics], 
+                  shuffle=True)
 
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        # save the model to file
-        local_dir = uuid4().hex
-        file_io.recursive_create_dir(local_dir)
-        local_path = '{}/saved_model'.format(local_dir)
-        tf.saved_model.save(model, f'{local_dir}/saved_model/')
-        local_path_chart = '{}/metrics.png'.format(local_dir)
-        plot_metrics(metrics, local_path_chart)
+    tf.get_logger().setLevel('ERROR')
+    # save the model to file
+    local_dir = uuid4().hex
+    file_io.recursive_create_dir(local_dir)
+    local_path = f'{local_dir}/saved_model'
+    tf.saved_model.save(model, local_path)
+    local_path_chart = '{}/metrics.png'.format(local_dir)
+    plot_metrics(metrics, local_path_chart)
     
-        remote_dir = args.output_path
-        remote_path_chart = '{}/metrics.png'.format(remote_dir)
-        if not remote_dir.startswith('gs://'):
-            file_io.recursive_create_dir(remote_dir)
-        tf.saved_model.save(model, '{}/'.format(remote_dir))
-        file_io.copy(local_path_chart, remote_path_chart)
-        file_io.delete_recursively(local_dir)
+    remote_dir = args.output_path
+    remote_path = f'{remote_dir}/saved_model'
+    remote_path_chart = f'{remote_dir}/metrics.png'
+    if not remote_dir.startswith('gs://'):
+        file_io.recursive_create_dir(remote_dir)
+    file_io.copy(local_path_chart, remote_path_chart)
+    tf.saved_model.save(model, remote_path)
+    
+    file_io.delete_recursively(local_dir)
