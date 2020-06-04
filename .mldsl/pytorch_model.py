@@ -30,18 +30,12 @@ def accuracy(a, b):
     return torch.sum(torch.eq(a, b)).float() / list(a.size())[0]
 
 
-
-def convert_to_one_hot(Y, C=2):
-    Y = np.eye(C)[Y.reshape(-1)]
-    return Y
-
 def prepare_dataset(data, N, word_to_index):
-    data['int_seq'] = data['int_seq'].apply(lambda x: [float(i) for i in x.split(',')])
+    data['int_seq'] = data['int_seq'].apply(lambda x: [int(i) for i in x.split(',')])
     print("Max sequence is set to {}".format(N))
     data['int_seq'] = data['int_seq'].apply(lambda x: (x + [word_to_index["unk"]] * N)[:N])
     ds_x = np.asarray(list(data["int_seq"]))
     ds_y = data["class"].values
-    ds_y = convert_to_one_hot(ds_y)
     return ds_x, ds_y
 
 
@@ -106,9 +100,9 @@ if __name__ =='__main__':
     np.random.seed(1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    with open(os.path.join(args.train, "word_to_index.json"), 'r') as f:
+    with open(os.path.join("s3://mldsl-test/movie/word_to_index.json"), 'r') as f:
         word_to_index = json.load(f)
-    word_to_vec_map = np.load(os.path.join(args.train, "word_to_vec_map.npy"), allow_pickle=True)
+    word_to_vec_map = np.load(os.path.join(args.train,"s3://mldsl-test/movie/word_to_vec_map.npy"), allow_pickle=True)
 
     model = LSTMModel(word_to_vec_map, word_to_index, lstm_size=32, input_len=150)
     model = model.float()
@@ -118,10 +112,14 @@ if __name__ =='__main__':
     optimizer = torch.optim.Adam(parameters, lr=args.learning_rate)
     model.to(device)
     
-    train_path = os.path.join(args.train, 'train/')
-    for file in os.listdir(train_path):
-        if file.endswith(".csv"):
-            df = pd.read_csv(os.path.join(train_path, file))
+    data_key = args.train.replace("s3://mldsl-test/", "")
+    bucket='mldsl-test'
+    s3 = boto3.resource('s3')
+    my_bucket = s3.Bucket(bucket)
+    for obj in my_bucket.objects.filter(Prefix=data_key):
+        if obj.key.endswith("csv"):
+            data_location = 's3://{}/{}'.format(obj.bucket_name, obj.key)
+            df = pd.read_csv(data_location)
 
     x_train, y_train = prepare_dataset(df, 150, word_to_index)
     
