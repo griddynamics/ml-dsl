@@ -21,6 +21,7 @@ from typing import List
 # noinspection PyUnresolvedReferences
 from google.cloud.dataproc_v1.gapic import enums
 from googleapiclient import errors
+from botocore.exceptions import ClientError
 
 from com.griddynamics.dsl.ml.jobs.pyspark_job import PySparkJob
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJob
@@ -629,7 +630,7 @@ class EmrExecutor(Executor):
     def __init__(self, job: PySparkJob, session: CompositeSession):
         self.__job = job
         self.__session = session.get_job_session()
-        self.__client = self.__session.session.client('emr')
+        self.__client = self.__session._session.client('emr')
         self.job_status = {}
         self.__yarn_app = []
         self.__cluster_uuid = self.__session.cluster
@@ -706,16 +707,7 @@ class EmrExecutor(Executor):
             self.__check_cluster(self.__client)
         self.__upload_files_to_s3(files_list)
         steps = []
-        #if self.__job.job_file is None:
-        #    for files in files_list:
-        #        for file in files:
-        #            if file.name is None:
-        #                name = file
-        #            else:
-        #                name = file.name
-        #            steps.append(self.define_copy_file_step(name))
-
-
+        
         py_spark_job_step = {
             'Jar': 'command-runner.jar',
             'Args': self.__prepare_job_args(self.__prepare_job_options())
@@ -745,11 +737,19 @@ class EmrExecutor(Executor):
             self.__upload_script_to_s3_job_path(script)
 
     def _get_step_status(self, step_id: str):
-        step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
-        state = step['Step']['Status']['State']
-        failed = state in ['FAILED', 'CANCELLED']
-        success = state in ['COMPLETED']
-        step_done = success or failed
+        t = 0
+        while t < 100:
+            try:
+                step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
+                state = step['Step']['Status']['State']
+                failed = state in ['FAILED', 'CANCELLED']
+                success = state in ['COMPLETED']
+                step_done = success or failed
+                break
+            except ClientError as e:
+                print(e)
+                sleep(3)
+            t += 1
         return state, step, step_done
 
     def get_job_state(self):
@@ -863,7 +863,7 @@ class EmrExecutor(Executor):
 class SageMakerExecutor:
     def __init__(self, session: CompositeSession, profile, mode: str, py_script_name: str, args: dict):
         self.__session = session.get_ml_session()
-        self.__bucket = self.__session._session.default_bucket()
+        self.__bucket = self.__session._sm_session.default_bucket()
         self.__role = self.__session._role
         self.__container = profile.container
         self.__instance_count = profile.instance_count

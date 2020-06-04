@@ -1,3 +1,5 @@
+# %py_load scripts/pytorch_model.py
+#!/usr/bin/python
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -7,6 +9,10 @@ import itertools
 import os
 import argparse
 import json
+from shutil import copy2
+import boto3
+import io
+import pandas as pd
 
 
 def pretrained_embedding_layer(word_to_vec_map, word_to_index):
@@ -14,7 +20,7 @@ def pretrained_embedding_layer(word_to_vec_map, word_to_index):
     emb_dim = word_to_vec_map.item().get("apple").shape[0]
     emb_matrix = np.zeros((vocab_len, emb_dim))
     for word, idx in word_to_index.items():
-        emb_matrix[idx, :] = word_to_vec_map.item().get(word)
+        emb_matrix[idx, :] = np.float32(word_to_vec_map.item().get(word))
     return emb_matrix
 
 
@@ -24,9 +30,24 @@ def accuracy(a, b):
     return torch.sum(torch.eq(a, b)).float() / list(a.size())[0]
 
 
+
+def convert_to_one_hot(Y, C=2):
+    Y = np.eye(C)[Y.reshape(-1)]
+    return Y
+
+def prepare_dataset(data, N, word_to_index):
+    data['int_seq'] = data['int_seq'].apply(lambda x: [float(i) for i in x.split(',')])
+    print("Max sequence is set to {}".format(N))
+    data['int_seq'] = data['int_seq'].apply(lambda x: (x + [word_to_index["unk"]] * N)[:N])
+    ds_x = np.asarray(list(data["int_seq"]))
+    ds_y = data["class"].values
+    ds_y = convert_to_one_hot(ds_y)
+    return ds_x, ds_y
+
+
 class LSTMModel(nn.Module):
     # predict steps is output_dim lstm_size is hidden dim of LSTM cell
-    def __init__(self, word_to_vec_map, word_to_index, lstm_size=1024, input_len=150):
+    def __init__(self, word_to_vec_map, word_to_index, lstm_size=32, input_len=200):
         super(LSTMModel, self).__init__()
         torch.manual_seed(1)
         self.lstm_size = lstm_size
@@ -53,18 +74,30 @@ class LSTMModel(nn.Module):
 
 def model_fn(model_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    model = LSTMModel()
+    bucket = 'mldsl-test'
+    s3 = boto3.resource('s3')
+    
+    content_object = s3.Object(bucket, 'movie/word_to_index.json')
+    file_content = content_object.get()['Body'].read().decode('utf-8')
+    word_to_index = json.loads(file_content)
+    
+    obj = s3.Object(bucket, 'movie/word_to_vec_map.npy')
+    with io.BytesIO(obj.get()["Body"].read()) as f:
+        word_to_vec_map = np.load(f, allow_pickle=True)
+    
+    model = LSTMModel(word_to_vec_map, word_to_index)
     with open(os.path.join(model_dir, 'movie.pth'), 'rb') as f:
         model.load_state_dict(torch.load(f))
+    model = model.float()
     return model.to(device)
 
 
 if __name__ =='__main__':
     parser = argparse.ArgumentParser()
     # hyperparameters sent by the client are passed as command-line arguments to the script.
-    parser.add_argument('--epochs', type=int, default=15)
+    parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=1024)
-    parser.add_argument('--learning_rate', type=float, default=0.015)
+    parser.add_argument('--learning_rate', type=float, default=0.03)
     # Data, model, and output directories
     parser.add_argument('--model_dir', type=str, default=os.environ['SM_MODEL_DIR'])
     parser.add_argument('--train', type=str, default=os.environ['SM_CHANNEL_TRAINING'])
@@ -73,22 +106,32 @@ if __name__ =='__main__':
     np.random.seed(1)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    with open(args.train + '/'+ "word_to_index.json", 'r') as f:
+    with open(os.path.join(args.train, "word_to_index.json"), 'r') as f:
         word_to_index = json.load(f)
-    word_to_vec_map = np.load(args.train + '/'+ "word_to_vec_map.npy", allow_pickle=True)
+    word_to_vec_map = np.load(os.path.join(args.train, "word_to_vec_map.npy"), allow_pickle=True)
 
-    model = LSTMModel(word_to_vec_map, word_to_index)
+    model = LSTMModel(word_to_vec_map, word_to_index, lstm_size=32, input_len=150)
     model = model.float()
     parameters = itertools.filterfalse(lambda p: not p.requires_grad, model.parameters())
     # Optimizer
     criterion = torch.nn.BCELoss()
     optimizer = torch.optim.Adam(parameters, lr=args.learning_rate)
     model.to(device)
+    
+    train_path = os.path.join(args.train, 'train/')
+    for file in os.listdir(train_path):
+        if file.endswith(".csv"):
+            df = pd.read_csv(os.path.join(train_path, file))
 
-    x_train = np.load(args.train + '/'+ 'data_train.npy', allow_pickle=True)
-    y_train = np.load(args.train + '/'+ 'label_train.npy', allow_pickle=True)
-    tensor_x = torch.tensor(x_train[:, :200]).float()
+    x_train, y_train = prepare_dataset(df, 150, word_to_index)
+    
+    tensor_x = torch.tensor(x_train).float()
     tensor_y = torch.tensor(y_train).float()
+    
+    print("Positive examples are {}".format(sum(tensor_y[:, 0])))
+    print("Negative examples are {}".format(sum(tensor_y[:, 1])))
+    del x_train
+    del y_train
 
     traindataset = torch.utils.data.TensorDataset(tensor_x, tensor_y)
     trainloader = torch.utils.data.DataLoader(traindataset, shuffle=True, batch_size=args.batch_size)
@@ -109,11 +152,10 @@ if __name__ =='__main__':
             optimizer.step()
             train_losses.append(running_loss / len(trainloader))
             model.train()
-        print("""Epoch {}/{}.. Train loss: {}.. Accuracy: {}.. Time: {}""".format(epoch+1, epochs,
-                                                                                  round(np.mean(train_losses),3),
-                                                                                  round(accuracy(label, logps), 3),
-                                                                                  round((time.time() - start),2)))
+        print(f"""Epoch {epoch+1}/{epochs}..  Train loss: {np.mean(train_losses):.3f}..  Accuracy: {accuracy(label, logps):.3f}..  Time: {(time.time() - start):.2f}""")
         running_loss = 0
+    copy2(os.path.join(args.train, "word_to_index.json"), os.path.join(args.model_dir, "word_to_index.json"))
+    copy2(os.path.join(args.train, "word_to_vec_map.npy"), os.path.join(args.model_dir, "word_to_vec_map.npy"))
+    
     with open(os.path.join(args.model_dir, 'movie.pth'), 'wb') as f:
         torch.save(model.state_dict(), f)
-
