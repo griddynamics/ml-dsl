@@ -1,4 +1,3 @@
-# %py_load scripts/pytorch_model.py
 #!/usr/bin/python
 import torch
 import torch.nn as nn
@@ -30,10 +29,10 @@ def accuracy(a, b):
     return torch.sum(torch.eq(a, b)).float() / list(a.size())[0]
 
 
-
 def convert_to_one_hot(Y, C=2):
     Y = np.eye(C)[Y.reshape(-1)]
     return Y
+
 
 def prepare_dataset(data, N, word_to_index):
     data['int_seq'] = data['int_seq'].apply(lambda x: [float(i) for i in x.split(',')])
@@ -94,7 +93,6 @@ def model_fn(model_dir):
 
 if __name__ =='__main__':
     parser = argparse.ArgumentParser()
-    # hyperparameters sent by the client are passed as command-line arguments to the script.
     parser.add_argument('--epochs', type=int, default=20)
     parser.add_argument('--batch_size', type=int, default=1024)
     parser.add_argument('--learning_rate', type=float, default=0.03)
@@ -152,7 +150,10 @@ if __name__ =='__main__':
             optimizer.step()
             train_losses.append(running_loss / len(trainloader))
             model.train()
-        print(f"""Epoch {epoch+1}/{epochs}..  Train loss: {np.mean(train_losses):.3f}..  Accuracy: {accuracy(label, logps):.3f}..  Time: {(time.time() - start):.2f}""")
+        print(f"""Epoch {epoch+1}/{epochs}..
+                  Train loss: {np.mean(train_losses):.3f}..
+                  Accuracy: {accuracy(label, logps):.3f}..
+                  Time: {(time.time() - start):.2f}""")
         running_loss = 0
     copy2(os.path.join(args.train, "word_to_index.json"), os.path.join(args.model_dir, "word_to_index.json"))
     copy2(os.path.join(args.train, "word_to_vec_map.npy"), os.path.join(args.model_dir, "word_to_vec_map.npy"))

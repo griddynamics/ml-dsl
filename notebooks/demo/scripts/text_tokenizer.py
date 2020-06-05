@@ -1,10 +1,10 @@
-# %py_load notebooks/demo/scripts/text_tokenizer.py
+# %py_load demo/scripts/text_tokenizer.py
 #!/usr/bin/python
 from pyspark import SQLContext, SparkContext
 from pyspark.sql.window import Window
 import pyspark.sql.functions as F
 from pyspark.sql import Row
-from pyspark.sql.types import StringType, ArrayType, IntegerType, FloatType
+from pyspark.sql.types import ArrayType, IntegerType, FloatType
 from pyspark.ml.feature import Tokenizer
 import argparse
 
@@ -32,7 +32,7 @@ def read_glove_vecs(glove_file, output_path):
     return words_to_index, index_to_words, word_to_vec_map
 
 
-def prepare_df(path, const, words_dct):
+def prepare_df(path, const, words_to_index):
     rdd = sc.textFile(path)
     row = Row("review")
     df = rdd.map(row).toDF()
@@ -44,7 +44,8 @@ def prepare_df(path, const, words_dct):
     df_words_token = tokenizer.transform(df_clean).select('words_token')
     df_cutted = df_words_token.withColumn('length', F.size(F.col('words_token')))
     # Replace word with it's index
-    word_udf = F.udf(lambda row: [words_to_index[w] if w in words_to_index.keys() else words_to_index["unk"] for w in row],
+    word_udf = F.udf(lambda row: [words_to_index[w] if w in words_to_index.keys()
+                                  else words_to_index["unk"] for w in row],
                  ArrayType(IntegerType()))
     df_stemmed = df_cutted.withColumn('words_stemmed', word_udf(F.col('words_token')))
     return df_stemmed.withColumn("class", F.lit(const))

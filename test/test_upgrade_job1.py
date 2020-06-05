@@ -1,19 +1,37 @@
+# Copyright (c) 2020 Grid Dynamics International, Inc. All Rights Reserved
+# http://www.griddynamics.com
+# Classification level: PUBLIC
+# Licensed under the Apache License, Version 2.0(the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+# http://www.apache.org/licenses/LICENSE - 2.0
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+# Id:          ML_PLATFORM
+# Project:     ML Platform
+# Description: DSL to configure and execute ML/DS pipelines
+
+
 import argparse
-import json
-import random 
-import time
-from datetime import datetime, timedelta
+import random
+from datetime import datetime
 
 from pyspark import SparkContext
-from pyspark.streaming import DStream, StreamingContext
+from pyspark.streaming import StreamingContext
+
 
 # Define a callable source 
 def generate_rdd(sc):
     reading = []
     for i in range(5):
         sensor_id = random.randint(1,100)
-        reading.append(("sensor_" + str(sensor_id), random.random() * 1000, int((datetime.now().timestamp()))))
+        reading.append(("sensor_" + str(sensor_id), random.random() * 1000,
+                        int((datetime.now().timestamp()))))
     return sc.parallelize(reading)
+
 
 if __name__ == '__main__':
     sc = SparkContext(appName="test_new_functionality").getOrCreate()

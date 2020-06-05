@@ -1,11 +1,12 @@
-
 #!/usr/bin/python
+
 import warnings
 with warnings.catch_warnings():
     warnings.simplefilter("ignore")
     from tensorflow.python.lib.io import file_io
 import pandas as pd
 import numpy as np
+
 
 def read_csv(path):
     files = file_io.get_matching_files('{}/part*'.format(path))
@@ -19,6 +20,7 @@ def read_csv(path):
         return None
     return pd.concat(pdf, axis=0, ignore_index=True).reset_index()
 
+
 def prepare_dataset(path, N, word_to_index):
     data = read_csv(path)
     data.dropna(inplace=True)
@@ -29,6 +31,7 @@ def prepare_dataset(path, N, word_to_index):
     ds_x = np.asarray(list(data["int_seq"]))
     ds_y = data["class"].values
     return ds_x, ds_y, l
+
 
 def read_glove_vectors(glove_file):
     files = file_io.get_matching_files('{}/part*'.format(glove_file))

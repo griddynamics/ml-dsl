@@ -11,7 +11,6 @@ with warnings.catch_warnings():
     from tensorflow.keras.callbacks import Callback
     from tensorflow.keras.optimizers import Adam
     import tensorflow as tf
-    import os
 
     from uuid import uuid4
     import argparse
@@ -21,8 +20,9 @@ with warnings.catch_warnings():
     import matplotlib.pyplot as plt
     import seaborn as sns
 
+
 class MetricCallback(Callback):
-    def on_train_begin(self,logs={}):
+    def on_train_begin(self, logs={}):
         self.losses = []
         self.accuracies = []
 
@@ -62,7 +62,6 @@ def pretrained_embed_layer(word_to_vec_map, word_to_index, emb_dim):
     emb_matrix = np.zeros((len(word_to_index)+1, emb_dim))
     for word, idx in word_to_index.items():
         emb_matrix[idx, :] = word_to_vec_map[word]
-    
     return emb_matrix
 
 
@@ -89,6 +88,7 @@ def define_model(input_shape, emb_matrix, vocab_len, emb_dim, rnn_units, dropout
 def convert_to_one_hot(Y, C=2):
     Y = np.eye(C)[Y.reshape(-1)]
     return Y
+
 
 def prepare_dataset(path, N, word_to_index):
     data = read_csv(path)
