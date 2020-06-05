@@ -14,7 +14,6 @@ import sys
 import re
 from runpy import run_path
 import numpy as np
-import io
 
 from IPython import get_ipython
 # noinspection PyUnresolvedReferences
@@ -35,7 +34,7 @@ from com.griddynamics.dsl.ml.sessions import SessionFactory
 from com.griddynamics.dsl.ml.executors.executors import *
 from com.griddynamics.dsl.ml.helpers import *
 
-np.set_printoptions(precision=4, threshold=np.inf)
+
 _py_scripts = {}
 job_tracker = {}
 prefix = '-'
@@ -212,8 +211,6 @@ class ExecMagic(Magics):
                             action=JoinAction)
         parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='DemoProfile', nargs='+',
                             action=JoinAction)
-        parser.add_argument('--max_failures_per_hour', type=int, help='Max failures rate',
-                            default=0)
         parser.add_argument('--output_path', '-o', type=str, help='Output GCS path', default='', nargs='+',
                             action=JoinAction)
         print("Parameters string = <<<{}>>>".format(py_path))
@@ -351,11 +348,6 @@ class ExecMagic(Magics):
                 output_path=output_path.split('gs://')[1],
                 job_name=job_name,
                 project=prf.project)))
-            # noinspection PyTypeChecker
-            metrics_png = self.download_from_gs(prf.bucket, prf.project, output_path, job_name)
-            if os.path.exists(metrics_png):
-                # noinspection PyTypeChecker
-                display(Image(filename=metrics_png))
         else:
             job_tracker[job_name] = executor.executor
             display(HTML('<a href="{url}">{job_name}</a>'.format(url=response['model_data'],
@@ -458,6 +450,7 @@ class ExecMagic(Magics):
 
     @line_magic
     def py_test(self, py_path):
+        np.set_printoptions(precision=4, threshold=np.inf)
         parser = argparse.ArgumentParser(prefix_chars=prefix)
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
         parser.add_argument('--profile', '-p', type=str, default='AIDeployDemoProfile',
