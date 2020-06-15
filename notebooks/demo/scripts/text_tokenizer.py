@@ -68,7 +68,7 @@ if __name__ == '__main__':
     parser.add_argument('--test_neg_path', type=str, help="test negative reviews path")
     parser.add_argument('--word_embeds', type=str, help="Path to glove word embeddings")
     parser.add_argument('--output_path', type=str, help="Sequences output path")
-    reviews_filter = '*.txt'
+    reviews_filter = '9*.txt'
 
     args, d = parser.parse_known_args()
     output_path = args.output_path
