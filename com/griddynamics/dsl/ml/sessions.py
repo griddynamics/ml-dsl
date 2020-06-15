@@ -108,7 +108,10 @@ class Session:
         else:
                 self._session = boto3.Session()
                 self._sm_session = sagemaker.Session()
-                self._role = sagemaker.get_execution_role()
+                if not use_cloud_engine_credentials:
+                    self._role = sagemaker.get_execution_role()
+                else:
+                    self._role = use_cloud_engine_credentials
 
     @staticmethod
     def get_region_from_zone(zone):
