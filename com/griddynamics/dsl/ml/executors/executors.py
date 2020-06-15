@@ -752,7 +752,6 @@ class EmrExecutor(Executor):
                 step_done = success or failed
                 break
             except ClientError as e:
-                print(e)
                 sleep(3)
             t += 1
         return state, step, step_done
