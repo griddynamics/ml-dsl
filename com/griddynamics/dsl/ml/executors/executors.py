@@ -22,11 +22,11 @@ from distutils.core import run_setup
 from datetime import datetime
 from functools import reduce
 from typing import List
+from retrying import retry
 
 # noinspection PyUnresolvedReferences
 from google.cloud.dataproc_v1.gapic import enums
 from googleapiclient import errors
-from botocore.exceptions import ClientError
 
 from com.griddynamics.dsl.ml.jobs.pyspark_job import PySparkJob
 from com.griddynamics.dsl.ml.jobs.ai_job import AIJob
@@ -643,6 +643,15 @@ class EmrExecutor(Executor):
         self.__step_ids = []
         self.__job_description = None
 
+    def retry_on_throttling(exc):
+        if exc.response['Error']['Code'] == 'ThrottlingException':
+            print("Throttling Exception Occured.")
+            print("Retrying.....")
+            return True
+        else:
+            return False
+
+    @retry(retry_on_exception=retry_on_throttling, wait_exponential_multiplier=1000, wait_exponential_max=60000)
     def __check_cluster(self, client):
         clusters = client.list_clusters()
         run_clusters = [i for i in clusters['Clusters'] if i['Status']['State'] == 'RUNNING']
@@ -687,10 +696,13 @@ class EmrExecutor(Executor):
                         else:
                             option_list.extend([key, value])
                 else:
-                    files_list = [f"s3://{self.__session.bucket}/" \
+                    #TODO check if files already on s3
+                    if len(self.__job.py_scripts) > 0:
+                        files_list = [f"s3://{self.__session.bucket}/" \
                                   f"{self.__construct_path(Helper.get_file_name(f))}" for f in v]
+                    else:
+                        files_list = v
                     option_list.extend([k, ','.join(files_list)])
-                    #[self.__source_emr + Helper.get_file_name(i) for i in v]
         return option_list
 
     @staticmethod
@@ -728,7 +740,6 @@ class EmrExecutor(Executor):
             state = 'STATE_UNSPECIFIED'
             while (state != 'RUNNING') and not step_done:
                 state, step, step_done = self._get_step_status(self.__step_ids[-1])
-                sleep(1)
             self.__delete_s3_folder_source()
             return self.job_description()
         else:
@@ -741,27 +752,23 @@ class EmrExecutor(Executor):
         for script in self.__job.py_scripts:
             self.__upload_script_to_s3_job_path(script)
 
+    @retry(retry_on_exception=retry_on_throttling, wait_exponential_multiplier=1000, wait_exponential_max=60000)
     def _get_step_status(self, step_id: str):
-        t = 0
-        while t < 100:
-            try:
-                step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
-                state = step['Step']['Status']['State']
-                failed = state in ['FAILED', 'CANCELLED']
-                success = state in ['COMPLETED']
-                step_done = success or failed
-                break
-            except ClientError as e:
-                sleep(3)
-            t += 1
+        step = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=step_id)
+        state = step['Step']['Status']['State']
+        failed = state in ['FAILED', 'CANCELLED']
+        success = state in ['COMPLETED']
+        step_done = success or failed
         return state, step, step_done
 
+    @retry(retry_on_exception=retry_on_throttling, wait_exponential_multiplier=1000, wait_exponential_max=60000)
     def get_job_state(self):
         response = self.__client.list_steps(ClusterId=self.__cluster_uuid, StepIds=self.__step_ids)
         for step in response['Steps']:
             self.job_status[step['Name']] = step['Status']['State']
         return self.job_status
 
+    @retry(retry_on_exception=retry_on_throttling, wait_exponential_multiplier=1000, wait_exponential_max=60000)
     def get_job(self):
         job = self.__client.describe_step(ClusterId=self.__cluster_uuid, StepId=self.__step_ids[-1])
         return job
@@ -775,8 +782,7 @@ class EmrExecutor(Executor):
             while not step_done:
                 state, step, step_done = self._get_step_status(step_id)
                 if state == 'CANCELLED':
-                    print('Step {} with id was successfully cancelled.'.format(step['Step']['Name'],
-                                                                               step['Step']['Id']))
+                    print('Step {} with id was successfully cancelled.'.format(step['Step']['Name']))
                     break
                 else:
                     sleep(1)
@@ -827,6 +833,7 @@ class EmrExecutor(Executor):
         AWSHelper.download_folder_from_storage(self.__session.bucket, path_from, path_to)
         pass
 
+    @retry(retry_on_exception=retry_on_throttling, wait_exponential_multiplier=1000, wait_exponential_max=60000)
     def __build_job_description(self):
         job = self.get_job()
         output_source = self.__client.describe_cluster(ClusterId=self.__cluster_uuid)['Cluster']['LogUri']

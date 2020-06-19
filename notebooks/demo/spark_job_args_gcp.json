@@ -1,1 +1,1 @@
-{"--train_pos_path": "gs://ai4ops/mldsl/data/aclImdb/train/pos", "--train_neg_path": "gs://ai4ops/mldsl/data/aclImdb/train/neg", "--test_pos_path": "gs://ai4ops/mldsl/data/aclImdb/test/pos", "--test_neg_path": "gs://ai4ops/mldsl/data/aclImdb/test/neg", "--word_embeds": "gs://ai4ops/mldsl/data/glove.6B.50d.txt"}
+{"--train_path": "gs://ai4ops/mldsl/data/aclImdb/train", "--test_path": "gs://ai4ops/mldsl/data/aclImdb/test", "--word_embeds": "gs://ai4ops/mldsl/data/glove.6B.50d.txt"}
