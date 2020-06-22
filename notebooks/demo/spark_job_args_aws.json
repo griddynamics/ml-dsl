@@ -1,1 +1,1 @@
-{"--train_pos_path": "s3://mldsl-test/aclImdb/train/pos", "--train_neg_path": "s3://mldsl-test/aclImdb/train/neg", "--test_pos_path": "s3://mldsl-test/aclImdb/test/pos", "--test_neg_path": "s3://mldsl-test/aclImdb/test/neg", "--word_embeds": "s3://mldsl-test/movie/glove.6B.50d.txt"}
+{"--train_path": "s3://mldsl-test/aclImdb/train", "--test_path": "s3://mldsl-test/aclImdb/test", "--word_embeds": "s3://mldsl-test/movie/glove.6B.50d.txt"}
