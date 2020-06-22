@@ -9,7 +9,7 @@ Creates a profile with necessary information for a job.
 > > Dictionary contains all available profiles   
 
 **Properties**  
-Properties of [BaseProfile](https://github.com/griddynamics/ml-dsl/docs/BaseProfile.md)  
+Properties of [BaseProfile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/BaseProfile.md)  
 |property   | type  | description                                                                           
 |-----------|-------|-----------------------------------------------------------------------------------------|
 | root_path | string| Path to folder with task scripts.                                                       |
