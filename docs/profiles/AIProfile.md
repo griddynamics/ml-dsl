@@ -16,11 +16,13 @@ Properties of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/
 
 #### Example
 
-> >     profile = Profile(root_path='/home/test/scripts', 
-> >                       bucket='test_bucket',
-> >                       project='test_project', 
+> >     profile = Profile(bucket='test_bucket',
 > >                       cluster='test_cluster', 
-> >                       region='global', ai_region='us-central1',  
-> >                       job_prefix='test_job', job_async=False,
+> >                       region='global', 
+> >                       job_prefix='test_job', 
+> >                       root_path='/home/test/scripts', 
+> >                       project='test_project', 
+> >                       ai_region='us-central1', 
+> >                       job_async=False,
 > >                       package_name='trainer', package_dst='packages',
 > >                       scale_tier='BASIC', runtime_version='1.14')
