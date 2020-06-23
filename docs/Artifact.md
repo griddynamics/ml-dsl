@@ -5,10 +5,10 @@
 Present artifacts of the Model. Artifacts are files in any format. For example trained models (a pickled scikit-learn model), data files etc.
 
 #### Properties 
-> __file_name: str
+> **__file_name: str**
 > > Name of Artifact file.
 >
-> __path
+> **__path**
 > > Path to Artifact.
 
 
