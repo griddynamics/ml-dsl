@@ -5,7 +5,7 @@
 Keep all arguments for Job as a dictionary.
 
 #### Properties  
-> __arguments = {}
+> **__arguments = {}**
 > > Dictionary of arguments for a job.  
 
 #### Methods
