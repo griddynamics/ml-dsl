@@ -9,7 +9,7 @@ Class for working with Google AIPlatform.
 
 |property   | description                                                                           
 |-----------|---------------------------------------------|
-| session   | Session of a job.|
+| session   | [Session](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/Session.md) of a job.|
 | ai_job   | AI job on AIPLatform.|
 | project_id    | Project ID of an AI job.|
 | wait_delay| Delay between attempts to run an AI job.|
