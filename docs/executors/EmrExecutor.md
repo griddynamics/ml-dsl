@@ -60,7 +60,7 @@ Class for running spark jobs on EMR AWS. Inherited from [Executor](https://githu
 > **upload_file_to_s3_job_path(file_path)** 
 > > Uploads file to given s3 path.
 > 
-> **upload_script_to_s3_job_path(script: [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md)** 
+> **upload_script_to_s3_job_path(script: [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md))** 
 > > Upload [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md) script .
 > 
 > **__construct_path(name)** 
