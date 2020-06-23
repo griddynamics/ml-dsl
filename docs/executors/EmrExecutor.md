@@ -2,14 +2,14 @@
 
 **class com.griddynamics.dsl.ml.executors.executors.EmrExecutor**
 
-Class for running spark jobs on EMR AWS. Inherited from Executor.
+Class for running spark jobs on EMR AWS. Inherited from [Executor](https://github.com/griddynamics/ml-dsl/blob/master/docs/executors/Executor.md).
 
 #### Properties
 
 |property   | description                                                                           
 |-----------|---------------------------------------------|
-| __job   | PysparkJob job to run on an Emr cluster.|
-| __session   | Session of a job on Emr cluster.|
+| __job   | [PysparkJob](https://github.com/griddynamics/ml-dsl/blob/master/docs/jobs/PySparkJob.md) job to run on an Emr cluster.|
+| __session   | [Session](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/Session.md) of a job on Emr cluster.|
 | __client    | Emr client to interact with the Emr cluster. Defined using Boto3 python library.|
 | __yarn_app| List of yarn statuses for a job on Emr AWS.|
 | __cluster_uuid| Id of Emr cluster.|
@@ -59,8 +59,8 @@ Class for running spark jobs on EMR AWS. Inherited from Executor.
 > **upload_file_to_s3_job_path(file_path)** 
 > > Uploads file to given s3 path.
 > 
-> **upload_script_to_s3_job_path(script: PyScript)** 
-> > Upload PyScript script .
+> **upload_script_to_s3_job_path(script: [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md)** 
+> > Upload [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md) script .
 > 
 > **__construct_path(name)** 
 > > Construct path to file if file copies from local to s3.
