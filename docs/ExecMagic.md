@@ -36,7 +36,7 @@
 > | argument           | description  |
 > |--------------------|------------------------------------------|
 > | -n, --name         | Name of script file. |
-> | -pm, --platform    | Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md)to run the specified task.|
+> | -pm, --platform    | Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md) to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > | -o, --output_path  | Output path for task script results. Example: gs://cluster/mldsl_example/prepared_data (Google Cloud Storage resource)|
 > | optional arguments | Any [Arguments](https://github.com/griddynamics/ml-dsl/blob/master/docs/Arguments.md) described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) class to describe the information.|
