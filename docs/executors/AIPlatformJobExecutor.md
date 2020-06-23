@@ -28,7 +28,7 @@ Class for working with Google AIPlatform.
 > **submit_batch_prediction_job()**
 > > Getting batch predictions of the model on AIPlatform.
 > 
-> **cancel_job(session: Session, job_name=None)**
+> **cancel_job(session: [Session](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/Session.md), job_name=None)**
 > > Static method. Cancelling a job on AIPlatform.
 > 
 > **create_model(model_name, online_prediction_logging=True)**
@@ -40,13 +40,13 @@ Class for working with Google AIPlatform.
 > **submit_prediction_job(predictions)**
 > > Getting prediction of deployed model on AIPlatform for “predictions” json.
 > 
-> **get_job(session: Session, full_job_name: str)**
+> **get_job(session: [Session](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/Session.md), full_job_name: str)**
 > > Getting a job on AIPlatform.
 > 
-> **get_version(session: Session, version_full_name: str)**
+> **get_version(session: [Session](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/Session.md), version_full_name: str)**
 > > Getting a specific version of a job on AIPlatform.
 > 
-> **get_best_hp_tuning_result(session: CompositeSession, job_name, objective_value_is_maximum_needed=False, debug=False)**
+> **get_best_hp_tuning_result(session: [CompositeSession](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/CompositeSession.md), job_name, objective_value_is_maximum_needed=False, debug=False)**
 > > Returns the best result of the hyperparameter optimization process.
 > 
 > **set_and_get_best_model_path(best_trial, bucket, train_job_dir)**
