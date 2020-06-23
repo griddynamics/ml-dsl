@@ -25,7 +25,8 @@ Class for running spark jobs on EMR AWS. Inherited from [Executor](https://githu
 > **__check_cluster(client)**
 > > Take a current EMR client, check clusters in state “WAITING” and “RUNNING”  and return available to run a spark job.
 > 
-> **__prepare_job_args(start_job_list: List[str])**
+> **__prepare_job_args(start_job_list: List[str])**  
+> 
 > **__prepare_job_options()**
 > 
 > > Prepares arguments of a spark job for adding to job flow.
