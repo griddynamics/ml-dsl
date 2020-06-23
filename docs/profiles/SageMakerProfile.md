@@ -1,8 +1,8 @@
-### Class SageMakerProfile(BaseProfile)
+### Class SageMakerProfile([BaseProfile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/BaseProfile.md))
 
 **class com.griddynamics.dsl.ml.settings.profiles.SageMakerProfile(bucket, cluster, region, job_prefix, container, root_path, framework_version, instance_type,  instance_count, endpoint_name, model_data, py_version)**
 
-Creates a profile with necessary information for training, deployment or test jobs on SageMaker. Inherited from BaseProfile. 
+Creates a profile with necessary information for training, deployment or test jobs on SageMaker. Inherited from [BaseProfile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/BaseProfile.md). 
 
 **Properties**  
 Properties of [BaseProfile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/BaseProfile.md)  
