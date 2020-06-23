@@ -21,7 +21,7 @@ Class for interaction with SageMaker AWS.
 | __arguments| Dictionary of arguments for a training job.|
 
 #### Methods  
-> **\_\_init\_\_(self, session: CompositeSession, profile, mode: str, py_script_name: str, args: dict)**
+> **\_\_init\_\_(self, session: [CompositeSession](https://github.com/griddynamics/ml-dsl/blob/master/docs/sessions/CompositeSession.md), profile, mode: str, py_script_name: str, args: dict)**
 > > mode
 > > Define which type of SageMaker estimator should be called:  
 > > “train” - estimator to fit model;  
