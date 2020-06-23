@@ -1,7 +1,7 @@
 ### Class ExecMagic
 
 #### %py_script
-> Register cell content as a task script and save it as a python file with specified path and filename. Return object of the PyScript class.  
+> Register cell content as a task script and save it as a python file with specified path and filename. Return object of the [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md) class.  
 > |argument  | description|
 > |----------|--------------------------|
 > |-p, --path| Path to save task script.|
@@ -14,7 +14,7 @@
 > >     In [1]: %py_script -e -n test_job.py -p test/scripts -o results
 
 #### %py_script_open
-> Load the content of the python script and register it as a task script. Return object of the PyScript class.  
+> Load the content of the python script and register it as a task script. Return object of the [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md) class.  
 > |argument  | description|
 > |----------|--------------------------|
 > |-p, --path| Path to script’s folder.|
@@ -36,10 +36,10 @@
 > | argument           | description  |
 > |--------------------|------------------------------------------|
 > | -n, --name         | Name of script file. |
-> | -pm, --platform    | Cloud platform to run the specified task.|
+> | -pm, --platform    | Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md)to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > | -o, --output_path  | Output path for task script results. Example: gs://cluster/mldsl_example/prepared_data (Google Cloud Storage resource)|
-> | optional arguments | Any Arguments described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) class to describe the information.|
+> | optional arguments | Any [Arguments](https://github.com/griddynamics/ml-dsl/blob/master/docs/Arguments.md) described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) class to describe the information.|
 > 
 > ##### Example
 > 
@@ -56,10 +56,10 @@
 > |--------------------|------------------------------------------|
 > | -n, --name         | Name of script file. |
 > | -s, --package_src  | Package src directory. |
-> | -pm, --platform    | Cloud platform to run the specified task.|
+> | -pm, --platform    | Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md) to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/AIProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > | -o, --output_path  | Output path for task script results. Example: gs://cluster/mldsl_example/models (Google Cloud Storage resource)|
-> | optional arguments | Any Arguments described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/AIProfile.md) class to describe the information.|
+> | optional arguments | Any [Arguments](https://github.com/griddynamics/ml-dsl/blob/master/docs/Arguments.md) described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/AIProfile.md) class to describe the information.|
 > 
 > ##### Example
 > 
@@ -77,7 +77,7 @@
 > |--------------------|------------------------------------------|
 > | -n, --name         | Name of script file. |
 > | -s, --package_src  | Package src directory. |
-> | -pm, --platform    | Cloud platform to run the specified task.|
+> | -pm, --platform    | Cloud Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md) to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/DeployAIProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > 
 > ##### Example
@@ -94,7 +94,7 @@
 > | argument           | description  |
 > |--------------------|------------------------------------------|
 > | -t, --test         | Test data to get online predictions. |
-> | -pm, --platform    | Cloud platform to run the specified task.|
+> | -pm, --platform    | Cloud Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md) to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/DeployAIProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > 
 > ##### Example
@@ -126,13 +126,13 @@
 > | argument           | description  |
 > |--------------------|------------------------------------------|
 > | -n, --name         | Name of script file. |
-> | -pm, --platform    | Cloud platform to run the specified task.|
+> | -pm, --platform    | Cloud Cloud [Platform](https://github.com/griddynamics/ml-dsl/blob/master/docs/Platform.md) to run the specified task.|
 > | -p, --profile      | Name of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) which describes the identifying information, config of a cluster of Compute Engine instances, task’s  and additional information.|
 > | -o, --output_path  | Output path for task script results. Example: gs://cluster/mldsl_example/prepared_data (Google Cloud Storage resource)|
 > | --old_job_id | Name of job’s previous version to upgrade.|
 > | -v, --validator | Name of custom validator class.|
 > | -vp, --validator_path | Path to script with validator class.|
-> | optional arguments | Any Arguments described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) class to describe the information.|
+> | optional arguments | Any [Arguments](https://github.com/griddynamics/ml-dsl/blob/master/docs/Arguments.md) described for your task. It’s recommended to use the functionality of [Profile](https://github.com/griddynamics/ml-dsl/blob/master/docs/profiles/PySparkJobProfile.md) class to describe the information.|
 > 
 > ##### Example
 > 
