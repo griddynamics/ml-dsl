@@ -41,7 +41,7 @@ Describe a PySpark job.
 > > ID of spark job.
 >
 > **__py_scripts**
-> > PyScript instance for spark job.
+> > [PyScript](https://github.com/griddynamics/ml-dsl/blob/master/docs/PyScript.md) instance for spark job.
 >
 > **__max_failures**
 > > Quantity of failures for a spark job.
