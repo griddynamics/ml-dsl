@@ -276,8 +276,6 @@ class ExecMagic(Magics):
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
         parser.add_argument('--name', '-n', type=str, help='Train script module name',
                             default='./', nargs='+', action=JoinAction)
-        parser.add_argument('--package_src', '-s', type=str, help='Package src directory',
-                            default='./', nargs='+', action=JoinAction)
         parser.add_argument('--profile', '-p', type=str, help='Name of profile',
                             default='AIDemoProfile', nargs='+', action=JoinAction)
         parser.add_argument('--output_path', '-o', type=str, help='Output GCS path',
@@ -285,8 +283,8 @@ class ExecMagic(Magics):
         args = parser.parse_known_args(py_path.split())
         script_name = args[0].name
         prf_name = args[0].profile
-        package_src = args[0].package_src
         prf = Profile.get(prf_name)
+        package_src = prf.root_path
         if prf is None:
             raise RuntimeError('Provide parameters profile {} does not exist.'.format(prf_name))
 
@@ -373,8 +371,6 @@ class ExecMagic(Magics):
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
         parser.add_argument('--profile', '-p', type=str, help='Name of profile', default='AIDemoProfile', nargs='+',
                             action=JoinAction)
-        parser.add_argument('--package_src', '-s', type=str, help='Package src directory', default='./', nargs='+',
-                            action=JoinAction)
 
         args = parser.parse_known_args(py_path.split())
         prf_name = args[0].profile
@@ -410,11 +406,11 @@ class ExecMagic(Magics):
 
             ai_job_builder = AIJobBuilder()
             ai_job_builder = ai_job_builder.model(model).package_dst(prf.package_dst)
-            if args[0].package_src is not None:
-                ai_job_builder = ai_job_builder.package_src(args[0].package_src)
+            if prf.custom_code is not None:
+                ai_job_builder = ai_job_builder.package_src(prf.root_path)
             ai_job = ai_job_builder.deploy_input(args_dct).build()
 
-        job_name = '{}_{}_predictor'.format(prf.job_prefix, int(datetime.now().timestamp()))
+        job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
         project = prf.project if hasattr(prf, "project") else prf.job_prefix
         ai_region = prf.ai_region if hasattr(prf, "ai_region") else prf.region
         session = SessionFactory(platform=args[0].platform).build_session(job_bucket=prf.bucket,
