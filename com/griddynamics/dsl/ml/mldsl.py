@@ -434,10 +434,9 @@ class ExecMagic(Magics):
                 project=prf.project)))
         else:
             script_name = args[0].model
-            package_src = args[0].package_src
             #TODO: args={}
             executor = SageMakerExecutor(session, prf, mode='deploy', 
-                                         py_script_name=os.path.join(package_src, script_name), args={})
+                                         py_script_name=os.path.join(prf.root_path, script_name), args={})
             predictor, response = executor.submit_deploy_model_job()
             job_tracker[job_name] = predictor
         # noinspection PyTypeChecker
@@ -453,6 +452,8 @@ class ExecMagic(Magics):
     def py_test(self, py_path):
         np.set_printoptions(precision=4, threshold=np.inf)
         parser = argparse.ArgumentParser(prefix_chars=prefix)
+        parser.add_argument('--model', '-n', type=str, help='Name of model', nargs='+',
+                            action=JoinAction)
         parser.add_argument('--platform', '-pm', type=Platform, help='Working platform')
         parser.add_argument('--profile', '-p', type=str, default='AIDeployDemoProfile',
                             nargs='+', action=JoinAction, help='Name of profile')
@@ -475,14 +476,14 @@ class ExecMagic(Magics):
                 "instances": json.loads(" ".join(args[0].test))
             }
             if prf.version_name:
-                v_name = f'projects/{prf.project}/models/{prf.model}/versions/{prf.version_name}'
+                v_name = f'projects/{prf.project}/models/{args[0].model}/versions/{prf.version_name}'
             else:
-                v_name = f'projects/{prf.project}/models/{prf.model}'
+                v_name = f'projects/{prf.project}/models/{args[0].model}'
             predictions["name"] = v_name
 
             m_builder = ModelBuilder()
             model = (m_builder
-                     .name(prf.model)
+                     .name(args[0].model)
                      .is_tuning(False)
                      .build())
             job_name = '{}_{}'.format(prf.job_prefix, int(datetime.now().timestamp()))
