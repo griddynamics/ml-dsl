@@ -14,7 +14,6 @@ import boto3
 import io
 import pandas as pd
 
-
 def pretrained_embedding_layer(word_to_vec_map, word_to_index):
     vocab_len = len(word_to_index)
     emb_dim = word_to_vec_map.item().get("apple").shape[0]
@@ -23,13 +22,10 @@ def pretrained_embedding_layer(word_to_vec_map, word_to_index):
         emb_matrix[idx, :] = np.float32(word_to_vec_map.item().get(word))
     return emb_matrix
 
-
 def accuracy(a, b):
     a = torch.argmax(a, dim=1)
     b = torch.argmax(b, dim=1)
     return torch.sum(torch.eq(a, b)).float() / list(a.size())[0]
-
-
 
 def convert_to_one_hot(Y, C=2):
     Y = np.eye(C)[Y.reshape(-1)]
@@ -43,7 +39,6 @@ def prepare_dataset(data, N, word_to_index):
     ds_y = data["class"].values
     ds_y = convert_to_one_hot(ds_y)
     return ds_x, ds_y
-
 
 class LSTMModel(nn.Module):
     # predict steps is output_dim lstm_size is hidden dim of LSTM cell
@@ -70,7 +65,6 @@ class LSTMModel(nn.Module):
         x = self.out(x)
         x = F.softmax(x)
         return x
-
 
 def model_fn(model_dir):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

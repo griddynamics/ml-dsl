@@ -85,7 +85,8 @@ class PySparkJobProfile(Profile):
 class AIProfile(Profile):
 
     def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async,
-                 package_dst, scale_tier, package_name, runtime_version, python_version,
+                 runtime_version, python_version,
+                 package_dst='mldsl/packages', scale_tier='BASIC', package_name='mldsl',
                  use_cloud_engine_credentials=False, arguments={}):
         super(AIProfile, self).__init__(bucket, cluster, region, job_prefix,
                                         root_path, project, ai_region, job_async)
@@ -101,17 +102,18 @@ class AIProfile(Profile):
 
 class DeployAIProfile(AIProfile):
 
-    def __init__(self, bucket, cluster, region, job_prefix, root_path, project, ai_region, job_async,
-                 package_dst, scale_tier, package_name, runtime_version, python_version,
+    def __init__(self, bucket, cluster, region, job_prefix,
+                 root_path, project, ai_region, job_async,
+                 runtime_version, python_version,
+                 package_dst=None, scale_tier='BASIC', package_name=None,
                  use_cloud_engine_credentials=False, arguments={},
-                 model_name='model', version_name='v1', is_new_model='True',
+                 version_name='v1', is_new_model='True',
                  artifacts=[], custom_code=None, path_to_saved_model='./'):
         super(DeployAIProfile, self).__init__(bucket, cluster, region, job_prefix,
                                               root_path, project, ai_region, job_async,
-                                              package_dst, scale_tier, package_name,
                                               runtime_version, python_version,
+                                              package_dst, scale_tier, package_name,
                                               use_cloud_engine_credentials, arguments)
-        self.model = model_name
         self.version_name = version_name
         self.is_new_model = is_new_model
         self.artifacts = artifacts
