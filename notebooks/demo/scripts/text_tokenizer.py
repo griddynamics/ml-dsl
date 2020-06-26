@@ -62,13 +62,11 @@ def save_dataset(df_pos, df_neg, path):
     
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--train_pos_path', type=str, help="train positive reviews path")
-    parser.add_argument('--train_neg_path', type=str, help="train negative reviews path")
-    parser.add_argument('--test_pos_path', type=str, help="test positive reviews path")
-    parser.add_argument('--test_neg_path', type=str, help="test negative reviews path")
+    parser.add_argument('--train_path', type=str, help="train positive reviews path")
+    parser.add_argument('--test_path', type=str, help="test positive reviews path")
     parser.add_argument('--word_embeds', type=str, help="Path to glove word embeddings")
     parser.add_argument('--output_path', type=str, help="Sequences output path")
-    reviews_filter = '9*.txt'
+    reviews_filter = '*.txt'
 
     args, d = parser.parse_known_args()
     output_path = args.output_path
@@ -78,14 +76,14 @@ if __name__ == '__main__':
 
     words_to_index, index_to_words, word_to_vec_map = read_glove_vecs(args.word_embeds, output_path)
     
-    df_pos = prepare_df(f"{args.train_pos_path}/{reviews_filter}", 1, words_to_index)
-    df_neg = prepare_df(f"{args.train_neg_path}/{reviews_filter}", 0, words_to_index)
+    df_pos = prepare_df(f"{args.train_path}/pos/{reviews_filter}", 1, words_to_index)
+    df_neg = prepare_df(f"{args.train_path}/neg/{reviews_filter}", 0, words_to_index)
     train_path = '{}/train'.format(output_path)
     save_dataset(df_pos, df_neg, train_path)
     print('Train saved to: "{}"'.format(train_path))
 
-    df_pos = prepare_df(f"{args.train_pos_path}/{reviews_filter}", 1, words_to_index)
-    df_neg = prepare_df(f"{args.train_neg_path}/{reviews_filter}", 0, words_to_index)
+    df_pos = prepare_df(f"{args.test_path}/pos/{reviews_filter}", 1, words_to_index)
+    df_neg = prepare_df(f"{args.test_path}/neg/{reviews_filter}", 0, words_to_index)
     test_path = '{}/test'.format(output_path)
     save_dataset(df_pos, df_neg, test_path)
     print('Test saved to: "{}"'.format(test_path))
