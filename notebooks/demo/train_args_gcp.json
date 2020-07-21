@@ -1,1 +1,1 @@
-{"--train_path": "gs://ai4ops/mldsl/data/demo_job_1590767199/train", "--word_embeds": "gs://ai4ops/mldsl/data/demo_job_1590767199/words", "--seq_len": "150", "--epochs": "20"}
+{"--train_path": "gs://<bucket>/mldsl/data/demo_job_1590767199/train", "--word_embeds": "gs://<bucket>/mldsl/data/demo_job_1590767199/words", "--seq_len": "150", "--epochs": "20"}
