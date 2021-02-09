@@ -210,3 +210,9 @@ buildNumber.properties
 **/.terraform.tfstate.lock.info
 
 **/*.swp
+notebooks/demo/scripts/test_streaming_job.py
+notebooks/demo/scripts/test_word_count.py
+notebooks/test_aws_emr.ipynb
+com/griddynamics/dsl/ml/tests/test/scripts/test_streaming_job.py
+com/griddynamics/dsl/ml/tests/test/scripts/test_word_count.py
+com/griddynamics/dsl/ml/tests/testing_aws_emr.ipynb
