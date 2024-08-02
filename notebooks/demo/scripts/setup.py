@@ -17,7 +17,7 @@
 
 from setuptools import setup, find_packages
 
-REQUIRED_PACKAGES = ['Keras==2.0.4','matplotlib==2.2.4','seaborn==0.9.0']
+REQUIRED_PACKAGES = ['Keras==2.13.1','matplotlib==2.2.4','seaborn==0.9.0']
 
 setup(
     name='trainer',
